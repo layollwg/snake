@@ -17,12 +17,20 @@ class SnakeEnv:
         1 = 左转(turn left)   → 基于当前方向左转
         2 = 右转(turn right)  → 基于当前方向右转
 
-    状态表示 (11 维二进制特征, 共 2^11 = 2048 个状态)：
+    状态表示 — 基础模式 (11 维二进制特征, 共 2^11 = 2048 个状态)：
         [ds, dl, dr, dir_u, dir_d, dir_l, dir_r, fu, fd, fl, fr]
            └ 危险 ┘  └──── 当前方向(one-hot) ────┘  └─ 食物方向 ─┘
         ds/dl/dr: 直行/左转/右转是否会立即碰撞 (1=危险)
         dir_*:    当前绝对方向 (恰好一位为 1)
         fu/fd/fl/fr: 食物相对于蛇头的位置 (至多一位为 1)
+
+    增强状态模式 (use_enhanced_state=True, 15 维, 共 2^15 = 32768 个状态)：
+        在基础 11 位之后额外追加 4 位：
+        [d2_ss, d2_ls, d2_rs, len_long]
+        d2_ss: 直行→直行 两步后是否碰墙 (1=危险)
+        d2_ls: 左转→直行 两步后是否碰墙 (1=危险)
+        d2_rs: 右转→直行 两步后是否碰墙 (1=危险)
+        len_long: 蛇身长度是否超过 grid_size (1=长蛇)
 
     奖励函数：
         +10  吃到食物
@@ -30,12 +38,13 @@ class SnakeEnv:
         -0.1 普通每一步 (鼓励蛇尽快吃食物)
     """
 
-    def __init__(self, grid_size=6, initial_length=2, max_steps=1000):
+    def __init__(self, grid_size=6, initial_length=2, max_steps=1000, use_enhanced_state=False):
         """
         参数：
             grid_size: 棋盘大小 (默认 6×6, 也可设 8×8 做难度对比)
             initial_length: 蛇初始长度 (默认 2, 即 1 头 + 1 节身体)
             max_steps: 单局最大步数, 防止无限循环
+            use_enhanced_state: 是否启用 15 位增强状态编码 (额外 3 个 2步预判危险位 + 1 个蛇身长度位)
         """
         if grid_size < 4:
             raise ValueError("棋盘至少需要 4×4")
@@ -45,7 +54,9 @@ class SnakeEnv:
         self.grid_size = grid_size
         self.initial_length = initial_length
         self.max_steps = max_steps
-        self.num_states = 2048
+        self.use_enhanced_state = use_enhanced_state
+        # 基础: 2^11 = 2048; 增强: 2^15 = 32768 (额外 4 位)
+        self.num_states = 32768 if use_enhanced_state else 2048
         self.num_actions = 3
 
         self.action_names = {0: "straight", 1: "turn_left", 2: "turn_right"}
@@ -158,9 +169,38 @@ class SnakeEnv:
         new_head = self._move_head_position(self.body[0], new_dir)
         return self._is_collision(new_head)
 
+    def _would_collide_2step(self, action1: int, action2: int = 0) -> bool:
+        """两步预判：先执行 action1，再执行 action2，最终是否碰撞？
+
+        第一步做完整碰撞检测（墙 + 蛇身），第二步仅检测边界碰撞（蛇身位置
+        难以精确模拟，但边界信息已足够帮助智能体规避死角）。
+        """
+        # --- 第一步 ---
+        new_dir1 = self._get_new_direction(action1)
+        new_head1 = self._move_head_position(self.body[0], new_dir1)
+        if self._is_collision(new_head1):
+            return True  # 第一步已撞
+
+        # --- 第二步方向（相对于 new_dir1） ---
+        LEFT_TURN = {0: 2, 1: 3, 2: 1, 3: 0}
+        RIGHT_TURN = {0: 3, 1: 2, 2: 0, 3: 1}
+        if action2 == 0:
+            new_dir2 = new_dir1
+        elif action2 == 1:
+            new_dir2 = LEFT_TURN[new_dir1]
+        else:
+            new_dir2 = RIGHT_TURN[new_dir1]
+
+        r, c = self._move_head_position(new_head1, new_dir2)
+        # 仅检测边界（蛇身二步预判忽略，保持计算简洁）
+        return r < 0 or r >= self.grid_size or c < 0 or c >= self.grid_size
+
     def get_state(self):
         """
-        将当前棋盘状态编码为 11 位二进制整数 (0~2047)。
+        将当前棋盘状态编码为二进制整数。
+
+        基础模式 (use_enhanced_state=False): 11 位, 0~2047。
+        增强模式 (use_enhanced_state=True):  15 位, 0~32767。
 
         位布局（从高位到低位）：
             0: ds    — 直行会碰撞？
@@ -174,6 +214,11 @@ class SnakeEnv:
             8: fd    — 食物在下方
             9: fl    — 食物在左方
             10: fr   — 食物在右方
+        增强模式额外 4 位（仅 use_enhanced_state=True）：
+            11: d2_ss  — 直行再直行 两步后碰墙？
+            12: d2_ls  — 左转再直行 两步后碰墙？
+            13: d2_rs  — 右转再直行 两步后碰墙？
+            14: len_long — 蛇身长度 > grid_size？
         """
         state_bits = [0] * 11
 
@@ -198,7 +243,14 @@ class SnakeEnv:
             state_bits[9] = 1 if food_c < head_c else 0   # 食物在左
             state_bits[10] = 1 if food_c > head_c else 0  # 食物在右
 
-        # 11 bits → 整数
+        # 增强模式: 追加 4 个额外位
+        if self.use_enhanced_state:
+            state_bits.append(1 if self._would_collide_2step(0, 0) else 0)  # 直行→直行
+            state_bits.append(1 if self._would_collide_2step(1, 0) else 0)  # 左转→直行
+            state_bits.append(1 if self._would_collide_2step(2, 0) else 0)  # 右转→直行
+            state_bits.append(1 if len(self.body) > self.grid_size else 0)  # 长蛇标志
+
+        # bits → 整数
         state_int = 0
         for bit_val in state_bits:
             state_int = (state_int << 1) | bit_val
@@ -206,9 +258,10 @@ class SnakeEnv:
         return state_int
 
     def get_state_vector(self):
-        """返回状态的 11 维 numpy 数组 (调试/可视化用)。"""
+        """返回状态的 numpy 数组 (调试/可视化用)。长度随模式不同为 11 或 15。"""
         state_int = self.get_state()
-        bits = [(state_int >> i) & 1 for i in range(10, -1, -1)]
+        n_bits = 15 if self.use_enhanced_state else 11
+        bits = [(state_int >> i) & 1 for i in range(n_bits - 1, -1, -1)]
         return np.array(bits, dtype=np.float32)
 
     def step(self, action):
@@ -305,6 +358,7 @@ class SnakeEnv:
             "grid_size": self.grid_size,
             "initial_length": self.initial_length,
             "max_steps": self.max_steps,
+            "use_enhanced_state": self.use_enhanced_state,
             "num_states": self.num_states,
             "num_actions": self.num_actions,
             "action_names": self.action_names,

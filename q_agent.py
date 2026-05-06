@@ -53,6 +53,11 @@ class AgentConfig:
     min_temperature: lower bound for temperature.
     temperature_decay: multiplicative decay for temperature.
     ucb_c: strength of UCB exploration bonus.
+    lambda_: eligibility-trace decay factor for Q(λ). 0 = standard 1-step TD,
+        1 = full Monte-Carlo return. Only applied when algorithm="q_learning".
+    adaptive_lr: if True, use a per-(state,action) adaptive learning rate
+        α(s,a) = 1 / (1 + visit_count(s,a)), satisfying the Robbins–Monro
+        condition. Overrides the fixed alpha when enabled.
     seed: random seed for reproducibility.
     """
 
@@ -76,6 +81,10 @@ class AgentConfig:
     temperature_decay: float = 0.995
 
     ucb_c: float = 1.0
+
+    lambda_: float = 0.0
+    adaptive_lr: bool = False
+
     seed: int = 42
 
 
@@ -116,6 +125,10 @@ class TabularRLAgent:
         self.state_visit_counts = np.zeros(self.num_states, dtype=np.int64)
         self.action_visit_counts = np.zeros((self.num_states, self.num_actions), dtype=np.int64)
         self.total_updates = 0
+
+        # Eligibility traces for Q(λ). Shape matches the Q-table.
+        # reset_eligibility_traces() must be called at the start of each episode.
+        self.eligibility_traces = np.zeros((self.num_states, self.num_actions), dtype=np.float64)
 
     # ------------------------------------------------------------------
     # Q-table helpers
@@ -253,14 +266,32 @@ class TabularRLAgent:
         raise RuntimeError("Invalid algorithm.")
 
     def _update_q_learning(self, state: int, action: int, reward: float, next_state: int, done: bool) -> float:
-        """Off-policy Q-learning update.
+        """Off-policy Q-learning update, with optional eligibility traces (Q(λ)).
 
-        Q(s,a) <- Q(s,a) + alpha * [r + gamma max_a' Q(s',a') - Q(s,a)]
+        Standard (lambda_=0):
+            Q(s,a) <- Q(s,a) + alpha * [r + gamma max_a' Q(s',a') - Q(s,a)]
+
+        With eligibility traces (lambda_>0, accumulating-trace variant):
+            E(s,a) += 1
+            Q      += alpha * delta * E    (broadcast over all entries)
+            E      *= gamma * lambda_
         """
         current = self.q_table[state, action]
         target = reward if done else reward + self.gamma * np.max(self.q_table[next_state])
         td_error = target - current
-        self.q_table[state, action] = current + self.alpha * td_error
+
+        alpha = self._get_alpha(state, action)
+
+        if self.config.lambda_ > 0.0:
+            # Accumulating eligibility trace for the current (s, a)
+            self.eligibility_traces[state, action] += 1.0
+            # Broadcast update to the entire Q-table
+            self.q_table += alpha * td_error * self.eligibility_traces
+            # Decay all traces
+            self.eligibility_traces *= self.gamma * self.config.lambda_
+        else:
+            self.q_table[state, action] = current + alpha * td_error
+
         self.total_updates += 1
         return float(td_error)
 
@@ -280,7 +311,7 @@ class TabularRLAgent:
         current = self.q_table[state, action]
         target = reward if done else reward + self.gamma * self.q_table[next_state, int(next_action)]
         td_error = target - current
-        self.q_table[state, action] = current + self.alpha * td_error
+        self.q_table[state, action] = current + self._get_alpha(state, action) * td_error
         self.total_updates += 1
         return float(td_error)
 
@@ -298,7 +329,7 @@ class TabularRLAgent:
             expected_q = float(np.dot(probs, self.q_table[next_state]))
             target = reward + self.gamma * expected_q
         td_error = target - current
-        self.q_table[state, action] = current + self.alpha * td_error
+        self.q_table[state, action] = current + self._get_alpha(state, action) * td_error
         self.total_updates += 1
         return float(td_error)
 
@@ -337,6 +368,27 @@ class TabularRLAgent:
         """Decay epsilon and temperature after each episode."""
         self.epsilon = max(self.config.min_epsilon, self.epsilon * self.config.epsilon_decay)
         self.temperature = max(self.config.min_temperature, self.temperature * self.config.temperature_decay)
+
+    def reset_eligibility_traces(self) -> None:
+        """Reset eligibility traces to zero at the start of each episode.
+
+        Must be called once per episode when lambda_ > 0. Safe to call even
+        when lambda_ == 0 (it is a cheap no-op in that case).
+        """
+        self.eligibility_traces[:] = 0.0
+
+    def _get_alpha(self, state: int, action: int) -> float:
+        """Return the effective learning rate for (state, action).
+
+        When adaptive_lr is enabled, the rate follows
+            α(s,a) = 1 / (1 + visit_count(s,a))
+        which satisfies the Robbins–Monro convergence conditions.
+        Otherwise the fixed self.alpha is returned.
+        """
+        if self.config.adaptive_lr:
+            n = max(1, int(self.action_visit_counts[state, action]))
+            return 1.0 / (1.0 + n)
+        return self.alpha
 
     # ------------------------------------------------------------------
     # Analysis and persistence

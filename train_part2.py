@@ -55,6 +55,64 @@ def manhattan_distance_to_food(env: SnakeEnv) -> Optional[int]:
     return abs(head_r - food_r) + abs(head_c - food_c)
 
 
+def _rule_based_action(env: SnakeEnv) -> int:
+    """Greedy heuristic: steer toward food when safe, fall back to any safe action.
+
+    This is used only by run_rule_based_baseline; it is NOT used during RL training.
+    """
+    head_r, head_c = env.body[0]
+    if env.food is None:
+        safe = [a for a in range(env.num_actions) if not env._would_collide(a)]
+        return random.choice(safe) if safe else 0
+
+    food_r, food_c = env.food
+
+    LEFT_TURN = {0: 2, 1: 3, 2: 1, 3: 0}
+    RIGHT_TURN = {0: 3, 1: 2, 2: 0, 3: 1}
+
+    def absolute_to_relative(abs_dir: int) -> Optional[int]:
+        """Map an absolute direction to a relative action; None = 180° turn."""
+        if abs_dir == env.direction:
+            return 0
+        if abs_dir == LEFT_TURN[env.direction]:
+            return 1
+        if abs_dir == RIGHT_TURN[env.direction]:
+            return 2
+        return None  # 180° — impossible
+
+    # Preferred absolute directions ordered by distance reduction
+    dr = food_r - head_r
+    dc = food_c - head_c
+    preferred_abs: List[int] = []
+    if abs(dr) >= abs(dc):
+        if dr > 0:
+            preferred_abs.append(1)  # down
+        elif dr < 0:
+            preferred_abs.append(0)  # up
+        if dc > 0:
+            preferred_abs.append(3)  # right
+        elif dc < 0:
+            preferred_abs.append(2)  # left
+    else:
+        if dc > 0:
+            preferred_abs.append(3)
+        elif dc < 0:
+            preferred_abs.append(2)
+        if dr > 0:
+            preferred_abs.append(1)
+        elif dr < 0:
+            preferred_abs.append(0)
+
+    for abs_dir in preferred_abs:
+        rel = absolute_to_relative(abs_dir)
+        if rel is not None and not env._would_collide(rel):
+            return rel
+
+    # Fall back to any safe action
+    safe = [a for a in range(env.num_actions) if not env._would_collide(a)]
+    return random.choice(safe) if safe else 0
+
+
 def apply_reward_shaping(
     env_reward: float,
     old_distance: Optional[int],
@@ -123,6 +181,40 @@ def run_random_baseline(env: SnakeEnv, episodes: int, seed: int) -> Dict[str, fl
     }
 
 
+def run_rule_based_baseline(env: SnakeEnv, episodes: int, seed: int) -> Dict[str, float]:
+    """Rule-based heuristic baseline: steer toward food when safe, else take a safe random action.
+
+    This is more capable than a random policy but requires no learning.
+    Including it creates a three-tier comparison: random < rule-based < trained RL.
+    """
+    set_seed(seed)
+    scores, rewards, steps = [], [], []
+
+    for _ in range(episodes):
+        state = env.reset()
+        done = False
+        total_reward = 0.0
+        info = {"score": 0, "steps": 0}
+
+        while not done:
+            action = _rule_based_action(env)
+            state, reward, done, info = env.step(action)
+            total_reward += reward
+
+        scores.append(info["score"])
+        rewards.append(total_reward)
+        steps.append(info["steps"])
+
+    return {
+        "episodes": episodes,
+        "avg_score": float(np.mean(scores)),
+        "std_score": float(np.std(scores)),
+        "max_score": int(np.max(scores)),
+        "avg_reward": float(np.mean(rewards)),
+        "avg_steps": float(np.mean(steps)),
+    }
+
+
 def run_greedy_evaluation(env: SnakeEnv, agent: TabularRLAgent, episodes: int, seed: int) -> Dict[str, float]:
     """Evaluate the learned policy with greedy action selection."""
     set_seed(seed)
@@ -162,6 +254,8 @@ def train_one_episode(
 ) -> Dict[str, float]:
     """Train for one episode and return per-episode statistics."""
     state = env.reset()
+    # Reset eligibility traces at episode start (no-op when lambda_=0)
+    agent.reset_eligibility_traces()
     done = False
     total_env_reward = 0.0
     total_learning_reward = 0.0
@@ -227,7 +321,12 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    env = SnakeEnv(grid_size=args.grid_size, initial_length=args.initial_length, max_steps=args.max_steps)
+    env = SnakeEnv(
+        grid_size=args.grid_size,
+        initial_length=args.initial_length,
+        max_steps=args.max_steps,
+        use_enhanced_state=args.enhanced_state,
+    )
 
     config = AgentConfig(
         num_states=env.num_states,
@@ -244,6 +343,8 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         min_temperature=args.min_temperature,
         temperature_decay=args.temperature_decay,
         ucb_c=args.ucb_c,
+        lambda_=args.lambda_,
+        adaptive_lr=args.adaptive_lr,
         seed=args.seed,
     )
     agent = TabularRLAgent(config)
@@ -282,6 +383,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
             "q_mean_abs": stats["q_mean_abs"],
             "q_max": stats["q_max"],
             "q_min": stats["q_min"],
+            "q_std": float(np.std(agent.effective_q_table())),
         }
         history.append(row)
 
@@ -295,12 +397,14 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
 
     trained_eval = run_greedy_evaluation(env, agent, args.eval_episodes, seed=args.seed + 1000)
     random_eval = run_random_baseline(env, args.eval_episodes, seed=args.seed + 2000)
+    rule_eval = run_rule_based_baseline(env, args.eval_episodes, seed=args.seed + 3000)
 
     summary: Dict[str, object] = {
         "config": vars(args),
         "agent_config": config.__dict__,
         "trained_greedy_evaluation": trained_eval,
         "random_baseline_evaluation": random_eval,
+        "rule_based_baseline_evaluation": rule_eval,
         "final_agent_stats": agent.stats(),
     }
 
@@ -316,9 +420,13 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         f.write(f"Algorithm: {args.algorithm}\n")
         f.write(f"Exploration: {args.exploration}\n")
         f.write(f"Reward shaping: {args.reward_shaping}, weight={args.shaping_weight}\n")
-        f.write(f"Grid: {args.grid_size}x{args.grid_size}, episodes={args.episodes}\n\n")
+        f.write(f"Grid: {args.grid_size}x{args.grid_size}, episodes={args.episodes}\n")
+        f.write(f"Enhanced state: {args.enhanced_state}, lambda={args.lambda_}, adaptive_lr={args.adaptive_lr}\n\n")
         f.write("Greedy trained policy evaluation:\n")
         for k, v in trained_eval.items():
+            f.write(f"  {k}: {v}\n")
+        f.write("\nRule-based baseline evaluation:\n")
+        for k, v in rule_eval.items():
             f.write(f"  {k}: {v}\n")
         f.write("\nRandom baseline evaluation:\n")
         for k, v in random_eval.items():
@@ -329,8 +437,9 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
 
     print("\nTraining finished.")
     print(f"Outputs saved to: {output_dir}")
-    print(f"Greedy avg score: {trained_eval['avg_score']:.3f}")
-    print(f"Random avg score: {random_eval['avg_score']:.3f}")
+    print(f"Greedy avg score:     {trained_eval['avg_score']:.3f}")
+    print(f"Rule-based avg score: {rule_eval['avg_score']:.3f}")
+    print(f"Random avg score:     {random_eval['avg_score']:.3f}")
 
     return summary
 
@@ -363,6 +472,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--reward-shaping", type=str, default="none", choices=["none", "simple", "potential"])
     parser.add_argument("--shaping-weight", type=float, default=0.1)
+
+    # Enhanced state representation
+    parser.add_argument("--enhanced-state", action="store_true", default=False,
+                        help="Use 15-bit enhanced state (adds 2-step danger + length bit)")
+
+    # TD(λ) eligibility traces
+    parser.add_argument("--lambda", type=float, default=0.0, dest="lambda_",
+                        help="Eligibility trace decay λ (0=1-step TD, 1≈MC). Only applies to q_learning.")
+
+    # Adaptive learning rate
+    parser.add_argument("--adaptive-lr", action="store_true", default=False,
+                        help="Use adaptive α(s,a)=1/(1+n(s,a)) instead of fixed alpha")
 
     parser.add_argument("--moving-average-window", type=int, default=100)
     parser.add_argument("--print-every", type=int, default=500)
