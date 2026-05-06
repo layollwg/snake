@@ -1,0 +1,71 @@
+{
+  "config": {
+    "episodes": 10000,
+    "eval_episodes": 300,
+    "grid_size": 6,
+    "initial_length": 2,
+    "max_steps": 1000,
+    "output_dir": "results\\part2_ablation\\sarsa_epsilon",
+    "seed": 49,
+    "algorithm": "sarsa",
+    "exploration": "epsilon_greedy",
+    "alpha": 0.1,
+    "gamma": 0.9,
+    "epsilon": 1.0,
+    "min_epsilon": 0.01,
+    "epsilon_decay": 0.995,
+    "optimistic_initial_value": 0.0,
+    "temperature": 1.0,
+    "min_temperature": 0.05,
+    "temperature_decay": 0.995,
+    "ucb_c": 1.0,
+    "reward_shaping": "none",
+    "shaping_weight": 0.1,
+    "moving_average_window": 100,
+    "print_every": 2000
+  },
+  "agent_config": {
+    "num_states": 2048,
+    "num_actions": 3,
+    "alpha": 0.1,
+    "gamma": 0.9,
+    "epsilon": 1.0,
+    "min_epsilon": 0.01,
+    "epsilon_decay": 0.995,
+    "algorithm": "sarsa",
+    "exploration": "epsilon_greedy",
+    "optimistic_initial_value": 0.0,
+    "temperature": 1.0,
+    "min_temperature": 0.05,
+    "temperature_decay": 0.995,
+    "ucb_c": 1.0,
+    "seed": 49
+  },
+  "trained_greedy_evaluation": {
+    "episodes": 300,
+    "avg_score": 13.326666666666666,
+    "std_score": 4.01496644513445,
+    "max_score": 24,
+    "avg_reward": 117.76100000000015,
+    "avg_steps": 66.69
+  },
+  "random_baseline_evaluation": {
+    "episodes": 300,
+    "avg_score": 0.22,
+    "std_score": 0.4600000000000001,
+    "max_score": 2,
+    "avg_reward": -8.522666666666668,
+    "avg_steps": 8.446666666666667
+  },
+  "final_agent_stats": {
+    "epsilon": 0.01,
+    "temperature": 0.05,
+    "visited_states": 256,
+    "visited_state_action_pairs": 747,
+    "total_updates": 596060,
+    "q_mean": 0.26122052638911847,
+    "q_mean_abs": 0.9307153589899638,
+    "q_max": 22.881681351185268,
+    "q_min": -9.999999771703592
+  }
+}

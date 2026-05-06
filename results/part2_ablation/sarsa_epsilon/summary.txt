@@ -1,0 +1,34 @@
+Part 2 Enhanced Training Summary
+================================
+
+Algorithm: sarsa
+Exploration: epsilon_greedy
+Reward shaping: none, weight=0.1
+Grid: 6x6, episodes=10000
+
+Greedy trained policy evaluation:
+  episodes: 300
+  avg_score: 13.326666666666666
+  std_score: 4.01496644513445
+  max_score: 24
+  avg_reward: 117.76100000000015
+  avg_steps: 66.69
+
+Random baseline evaluation:
+  episodes: 300
+  avg_score: 0.22
+  std_score: 0.4600000000000001
+  max_score: 2
+  avg_reward: -8.522666666666668
+  avg_steps: 8.446666666666667
+
+Final Q-table / visit statistics:
+  epsilon: 0.01
+  temperature: 0.05
+  visited_states: 256
+  visited_state_action_pairs: 747
+  total_updates: 596060
+  q_mean: 0.26122052638911847
+  q_mean_abs: 0.9307153589899638
+  q_max: 22.881681351185268
+  q_min: -9.999999771703592

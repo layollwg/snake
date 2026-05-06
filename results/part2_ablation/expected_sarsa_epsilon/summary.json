@@ -1,0 +1,71 @@
+{
+  "config": {
+    "episodes": 10000,
+    "eval_episodes": 300,
+    "grid_size": 6,
+    "initial_length": 2,
+    "max_steps": 1000,
+    "output_dir": "results\\part2_ablation\\expected_sarsa_epsilon",
+    "seed": 50,
+    "algorithm": "expected_sarsa",
+    "exploration": "epsilon_greedy",
+    "alpha": 0.1,
+    "gamma": 0.9,
+    "epsilon": 1.0,
+    "min_epsilon": 0.01,
+    "epsilon_decay": 0.995,
+    "optimistic_initial_value": 0.0,
+    "temperature": 1.0,
+    "min_temperature": 0.05,
+    "temperature_decay": 0.995,
+    "ucb_c": 1.0,
+    "reward_shaping": "none",
+    "shaping_weight": 0.1,
+    "moving_average_window": 100,
+    "print_every": 2000
+  },
+  "agent_config": {
+    "num_states": 2048,
+    "num_actions": 3,
+    "alpha": 0.1,
+    "gamma": 0.9,
+    "epsilon": 1.0,
+    "min_epsilon": 0.01,
+    "epsilon_decay": 0.995,
+    "algorithm": "expected_sarsa",
+    "exploration": "epsilon_greedy",
+    "optimistic_initial_value": 0.0,
+    "temperature": 1.0,
+    "min_temperature": 0.05,
+    "temperature_decay": 0.995,
+    "ucb_c": 1.0,
+    "seed": 50
+  },
+  "trained_greedy_evaluation": {
+    "episodes": 300,
+    "avg_score": 13.45,
+    "std_score": 4.339834866290037,
+    "max_score": 30,
+    "avg_reward": 118.85800000000015,
+    "avg_steps": 67.50333333333333
+  },
+  "random_baseline_evaluation": {
+    "episodes": 300,
+    "avg_score": 0.17666666666666667,
+    "std_score": 0.4228343515951476,
+    "max_score": 2,
+    "avg_reward": -9.004333333333333,
+    "avg_steps": 8.886666666666667
+  },
+  "final_agent_stats": {
+    "epsilon": 0.01,
+    "temperature": 0.05,
+    "visited_states": 256,
+    "visited_state_action_pairs": 750,
+    "total_updates": 597561,
+    "q_mean": 0.2559183896400777,
+    "q_mean_abs": 0.9112440206526954,
+    "q_max": 22.926655410028083,
+    "q_min": -9.99999999294492
+  }
+}

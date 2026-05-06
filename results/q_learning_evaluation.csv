@@ -1,0 +1,2 @@
+episodes,epsilon,avg_score,avg_total_reward,avg_survival_steps
+100,0.0,13.74,121.69400000000014,69.78
