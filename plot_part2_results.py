@@ -101,7 +101,8 @@ def plot_policy_distribution(result_dir: Path) -> None:
     plt.ylabel("Number of states")
     plt.title(f"Greedy policy action distribution {subtitle}")
     for bar, count in zip(bars, counts):
-        plt.text(bar.get_x() + bar.get_width() / 2.0, bar.get_height() + 0.5,
+        offset = max(bar.get_height() * 0.03, 1)
+        plt.text(bar.get_x() + bar.get_width() / 2.0, bar.get_height() + offset,
                  str(count), ha="center", va="bottom", fontsize=9)
     plt.tight_layout()
     plt.savefig(result_dir / "viz_policy_distribution.png", dpi=180)

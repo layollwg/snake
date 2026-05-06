@@ -201,7 +201,9 @@ def main():
         seed_summaries = []
 
         for seed_idx in range(args.num_seeds):
-            seed = args.seed + i * 1000 + seed_idx
+            # Stride by num_seeds to guarantee no two (variant, seed_idx) pairs
+            # share the same seed value, even when num_seeds is large.
+            seed = args.seed + i * args.num_seeds + seed_idx
             if args.num_seeds > 1:
                 out_dir = base_dir / variant["name"] / f"seed_{seed_idx}"
             else:

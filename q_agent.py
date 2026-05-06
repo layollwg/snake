@@ -386,6 +386,9 @@ class TabularRLAgent:
         Otherwise the fixed self.alpha is returned.
         """
         if self.config.adaptive_lr:
+            # Defensive max: visit count should always be ≥ 1 during training because
+            # select_action() increments the counter before update() is called.
+            # The clamp guards against direct calls to update() outside training loops.
             n = max(1, int(self.action_visit_counts[state, action]))
             return 1.0 / (1.0 + n)
         return self.alpha

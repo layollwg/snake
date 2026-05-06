@@ -62,6 +62,7 @@ def _rule_based_action(env: SnakeEnv) -> int:
     """
     head_r, head_c = env.body[0]
     if env.food is None:
+        # Board is completely full (snake occupies every cell) — no food to chase.
         safe = [a for a in range(env.num_actions) if not env._would_collide(a)]
         return random.choice(safe) if safe else 0
 

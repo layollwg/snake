@@ -192,7 +192,9 @@ class SnakeEnv:
             new_dir2 = RIGHT_TURN[new_dir1]
 
         r, c = self._move_head_position(new_head1, new_dir2)
-        # 仅检测边界（蛇身二步预判忽略，保持计算简洁）
+        # 仅检测边界（蛇身二步预判忽略，保持计算简洁）。
+        # 注：精确的蛇身预判需要模拟蛇的移动，包括判断尾巴是否移走以及是否吃到
+        # 食物。简化为边界检测在实践中已能有效帮助智能体规避墙角陷阱。
         return r < 0 or r >= self.grid_size or c < 0 or c >= self.grid_size
 
     def get_state(self):
