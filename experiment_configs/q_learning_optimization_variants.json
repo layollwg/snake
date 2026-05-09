@@ -1,0 +1,92 @@
+[
+  {
+    "name": "baseline",
+    "description": "Default Q-learning baseline",
+    "extra": []
+  },
+  {
+    "name": "slow_epsilon_decay",
+    "description": "More exploration through slower epsilon decay",
+    "extra": ["--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "potential_shaping",
+    "description": "Potential-based distance shaping",
+    "extra": ["--reward-shaping", "potential", "--shaping-weight", "0.1"]
+  },
+  {
+    "name": "slow_decay_potential_shaping",
+    "description": "Slower epsilon decay plus potential shaping",
+    "extra": ["--epsilon-decay", "0.999", "--reward-shaping", "potential", "--shaping-weight", "0.1"]
+  },
+  {
+    "name": "high_gamma_slow_decay",
+    "description": "Higher discount factor with slower exploration decay",
+    "extra": ["--gamma", "0.95", "--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "low_alpha_slow_decay",
+    "description": "Lower learning rate with slower exploration decay",
+    "extra": ["--alpha", "0.05", "--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "optimistic_slow_decay",
+    "description": "Optimistic Q initialization with slower exploration decay",
+    "extra": ["--epsilon-decay", "0.999", "--optimistic-initial-value", "2.0"]
+  },
+  {
+    "name": "balanced_tuned",
+    "description": "Combined tuned setting: gamma 0.95, slow decay, light shaping",
+    "extra": ["--gamma", "0.95", "--epsilon-decay", "0.999", "--reward-shaping", "potential", "--shaping-weight", "0.05"]
+  },
+  {
+    "name": "low_alpha_medium_decay",
+    "description": "Lower learning rate with medium-slow epsilon decay",
+    "extra": ["--alpha", "0.05", "--epsilon-decay", "0.9985"]
+  },
+  {
+    "name": "low_alpha_very_slow_decay",
+    "description": "Lower learning rate with very slow epsilon decay",
+    "extra": ["--alpha", "0.05", "--epsilon-decay", "0.9995"]
+  },
+  {
+    "name": "alpha_075_slow_decay",
+    "description": "Intermediate learning rate with slower epsilon decay",
+    "extra": ["--alpha", "0.075", "--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "alpha_03_slow_decay",
+    "description": "Very conservative learning rate with slower epsilon decay",
+    "extra": ["--alpha", "0.03", "--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "low_alpha_high_gamma_slow_decay",
+    "description": "Lower learning rate, higher discount factor, slower decay",
+    "extra": ["--alpha", "0.05", "--gamma", "0.95", "--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "low_alpha_light_potential",
+    "description": "Lower learning rate plus light potential shaping",
+    "extra": ["--alpha", "0.05", "--epsilon-decay", "0.999", "--reward-shaping", "potential", "--shaping-weight", "0.05"]
+  },
+  {
+    "name": "low_alpha_potential",
+    "description": "Lower learning rate plus stronger potential shaping",
+    "extra": ["--alpha", "0.05", "--epsilon-decay", "0.999", "--reward-shaping", "potential", "--shaping-weight", "0.1"]
+  },
+  {
+    "name": "safe_action_mask",
+    "description": "Q-learning with immediate-danger action masking",
+    "extra": ["--avoid-immediate-danger"]
+  },
+  {
+    "name": "safe_low_alpha_slow_decay",
+    "description": "Safety mask plus lower alpha and slower exploration decay",
+    "extra": ["--avoid-immediate-danger", "--alpha", "0.05", "--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "safe_low_alpha_light_potential",
+    "description": "Safety mask, lower alpha, slower decay, and light potential shaping",
+    "extra": ["--avoid-immediate-danger", "--alpha", "0.05", "--epsilon-decay", "0.999", "--reward-shaping", "potential", "--shaping-weight", "0.05"]
+  }
+]

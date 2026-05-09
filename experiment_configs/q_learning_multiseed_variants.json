@@ -1,0 +1,17 @@
+[
+  {
+    "name": "baseline",
+    "description": "Default Q-learning baseline",
+    "extra": []
+  },
+  {
+    "name": "optimized_low_alpha",
+    "description": "Optimized Q-learning: lower alpha with slower epsilon decay",
+    "extra": ["--alpha", "0.05", "--epsilon-decay", "0.999"]
+  },
+  {
+    "name": "safe_low_alpha_light_potential",
+    "description": "Safety mask, lower alpha, slower decay, and light potential shaping",
+    "extra": ["--avoid-immediate-danger", "--alpha", "0.05", "--epsilon-decay", "0.999", "--reward-shaping", "potential", "--shaping-weight", "0.05"]
+  }
+]
