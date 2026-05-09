@@ -12,8 +12,16 @@
 \usepackage{hyperref}
 \usepackage{cite}
 \usepackage{microtype}
+\usepackage{placeins}
 
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\newcommand{\safeincludegraphics}[2][]{%
+  \IfFileExists{#2}{%
+    \includegraphics[#1]{#2}%
+  }{%
+    \fbox{\parbox{0.95\columnwidth}{\centering Missing figure:\\\texttt{#2}}}%
+  }%
+}
 
 \title{Game Playing with Q-Learning:\\
 Tabular Reinforcement Learning for Simplified Snake}
@@ -27,21 +35,21 @@ Tabular Reinforcement Learning for Simplified Snake}
 \begin{document}
 \maketitle
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \begin{abstract}
 We study tabular Q-learning for a simplified Snake game on a $6{\times}6$ grid. The state space is efficiently compressed into 11 binary features encoding local danger, heading, and food direction, reducing the problem to 2,048 discrete states. Our primary $\varepsilon$-greedy Q-learning agent, trained over 10{,}000 episodes, achieves an average greedy-evaluation score of 13.73, representing a 73$\times$ improvement over the random baseline (0.19). We further evaluate the impact of exploration schedules, TD-control variants, and reward-shaping methods.  Our findings demonstrate that: (i) exploration scheduling exerts a more significant influence on performance than specific algorithm choice; (ii) potential-based shaping provides marginal benefits while simple shaping can lead to sub-optimal policies; and (iii) the compact 11-bit encoding imposes a structural performance ceiling for longer snake configurations. 
 \end{abstract}
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \section{Introduction}
 \label{sec:intro}
 
 Tabular Q-learning~\cite{watkins1992q} remains the canonical entry
 point to reinforcement learning: every value is stored explicitly,
 making the learned knowledge fully auditable.
-Yet even in this transparent regime, subtle design choices—how fast
+Yet even in this transparent regime, subtle design choices---how fast
 to decay exploration, whether to add reward shaping, which TD target
-to use—produce substantial performance differences that deserve
+to use---produce substantial performance differences that deserve
 rigorous empirical analysis.
 
 The Snake game encapsulates four challenges that are representative
@@ -70,7 +78,7 @@ drawing on multiple independent experimental datasets
 Finally, we discuss open research challenges
 (Section~\ref{sec:challenges}).
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \section{Problem Formulation}
 \label{sec:formulation}
 
@@ -128,7 +136,7 @@ Section~\ref{sec:ceiling}.
 The 100:1 food/step ratio ensures the dominant signal is food
 collection; the step penalty prevents looping.
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \section{Key RL Methods}
 \label{sec:methods}
 
@@ -226,7 +234,7 @@ post-training and compared to a 300-episode uniform-random baseline.
   \end{tabular}
 \end{table}
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \section{Experimental Results and Comparisons}
 \label{sec:experiments}
 
@@ -239,37 +247,37 @@ episodes, $\varepsilon=0$, post-training).
 These differ significantly for exploration-heavy configurations,
 as we explain below.
 
-\begin{figure}[h]
+\begin{figure}[tbp]
   \centering
-  \includegraphics[width=\columnwidth]{results/figures/moving_avg_score.png}
+  \safeincludegraphics[width=\columnwidth]{results/figures/moving_avg_score.png}
   \caption{Moving-average score trend from \texttt{results/figures/moving\_avg\_score.png}. The curve shows stable improvement of the main Q-learning run over training.}
   \label{fig:moving_avg_score}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[tbp]
   \centering
-  \includegraphics[width=\columnwidth]{results/figures/moving_avg_reward.png}
+  \safeincludegraphics[width=\columnwidth]{results/figures/moving_avg_reward.png}
   \caption{Moving-average reward trend from \texttt{results/figures/moving\_avg\_reward.png}, consistent with the score improvement pattern.}
   \label{fig:moving_avg_reward}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[tbp]
   \centering
-  \includegraphics[width=\columnwidth]{results/figures/baseline_vs_q_learning.png}
+  \safeincludegraphics[width=\columnwidth]{results/figures/baseline_vs_q_learning.png}
   \caption{Greedy evaluation comparison between random baseline and trained Q-learning policy from \texttt{results/figures/baseline\_vs\_q\_learning.png}.}
   \label{fig:baseline_vs_ql}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[tbp]
   \centering
-  \includegraphics[width=\columnwidth]{results/figures/epsilon_decay_comparison.png}
+  \safeincludegraphics[width=\columnwidth]{results/figures/epsilon_decay_comparison.png}
   \caption{Effect of epsilon-decay settings from \texttt{results/figures/epsilon\_decay\_comparison.png}.}
   \label{fig:epsilon_decay_visual}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[tbp]
   \centering
-  \includegraphics[width=\columnwidth]{results/figures/reward_shaping_comparison.png}
+  \safeincludegraphics[width=\columnwidth]{results/figures/reward_shaping_comparison.png}
   \caption{Reward-shaping comparison from \texttt{results/figures/reward\_shaping\_comparison.png}.}
   \label{fig:reward_shaping_visual}
 \end{figure}
@@ -493,7 +501,8 @@ We identify this as a \textbf{structural limit} imposed by the
         leading to seemingly random deaths from the agent's perspective.
 \end{enumerate}
 
-\begin{table*}[t]  % 使用 table* 并在页面顶部显示
+\FloatBarrier
+\begin{table*}[!t]  % use table* and place at top of page
   \centering
   \caption{Score Frequency Distribution (last 2\,000 training episodes)}
   \label{tab:scoredist}
@@ -515,7 +524,7 @@ We identify this as a \textbf{structural limit} imposed by the
 \subsection{Full Ablation Study}
 \label{sec:ablation}
 
-\begin{table*}[t]
+\begin{table*}[!t]
   \centering
   \caption{Full Ablation (10\,000 training episodes,
            300 greedy evaluation episodes)}
@@ -583,7 +592,7 @@ Low-exploration learns fastest in episodes 1--500 (MA=9.30 vs 6.02
 for medium), but plateaus earliest and finishes lowest (11.84).
 Slow decay is slowest in training (MA=1.15 at ep500) but ultimately
 achieves a comparable training MA (12.16) to medium (12.31) at
-episode 10\,000—and the highest \emph{greedy evaluation score}
+episode 10\,000---and the highest \emph{greedy evaluation score}
 (14.79) in the ablation.
 
 The key insight is the \textbf{training-vs-evaluation discrepancy}.
@@ -593,7 +602,7 @@ at episode 5\,000.
 Its training MA score of 12.16 includes the drag of exploratory
 actions.
 When evaluated greedily ($\varepsilon=0$) post-training, it achieves
-14.79—because it received far more diverse TD updates before
+14.79---because it received far more diverse TD updates before
 committing to exploitation.
 Medium decay reaches $\varepsilon_{\min}$ at episode 900, after
 which no further Q-table diversification occurs.
@@ -1000,7 +1009,7 @@ optimistic initialization. This setting gives the highest greedy
 evaluation average score (14.33) and ties for the best max score (30),
 so we select it as the final Q-learning-only optimized configuration.
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \section{Open Research Challenges}
 \label{sec:challenges}
 
@@ -1078,7 +1087,7 @@ curiosity-driven methods~\cite{pathak2017curiosity} provide principled
 solutions, but their calibration to the game's extrinsic reward
 timescale remains an open problem.
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \section{Conclusion}
 \label{sec:conclusion}
 
@@ -1128,7 +1137,7 @@ Overcoming this ceiling requires either richer state representations
 or deep function approximation, motivating the extension to DQN
 and POMDP-aware architectures for future work.
 
-%% ─────────────────────────────────────────────────────────────
+%% -------------------------------------------------------------
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{99}
 
