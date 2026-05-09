@@ -939,10 +939,10 @@ The gap between the best ($+7.7\%$) and worst ($-6.8\%$) exploration
 configurations (14.8 points combined) far exceeds the gap between
 on-policy and off-policy algorithms (0.40 points).
 
-\subsection{6{\times}6 vs.\ 8{\times}8 Grid-Size Comparison}
+\subsection{$6{\times}6$ vs.\ $8{\times}8$ Grid-Size Comparison}
 
 To verify whether the main conclusion transfers to a larger board, we
-compare Q-learning under the same core setup on 6{\times}6 and 8{\times}8
+compare Q-learning under the same core setup on $6{\times}6$ and $8{\times}8$
 using \texttt{results/grid\_size\_comparison/grid\_size\_summary.csv}.
 
 \begin{table}[h]
@@ -953,14 +953,14 @@ using \texttt{results/grid\_size\_comparison/grid\_size\_summary.csv}.
     \toprule
     Grid & Avg.\ Score & Normalized Score & Max Score & Avg.\ Steps \\
     \midrule
-    6{\times}6 & 13.73 & 0.404 & 27 & 69.99 \\
-    8{\times}8 & 16.88 & 0.272 & 36 & 111.03 \\
+    $6{\times}6$ & 13.73 & 0.404 & 27 & 69.99 \\
+    $8{\times}8$ & 16.88 & 0.272 & 36 & 111.03 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 The trained policy outperforms random baseline on both board sizes.
-On 8{\times}8, raw score and survival steps increase because the board
+On $8{\times}8$, raw score and survival steps increase because the board
 provides more free space, while capacity-normalized performance
 decreases (0.272 vs.\ 0.404), indicating that long-horizon planning
 becomes harder on larger grids.
