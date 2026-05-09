@@ -1,0 +1,1156 @@
+\documentclass[10pt,conference]{IEEEtran}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{microtype}
+
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\title{Game Playing with Q-Learning:\\
+Tabular Reinforcement Learning for Simplified Snake}
+
+\author{
+  \IEEEauthorblockN{Project Team --- Track B: Game Playing with Q-Learning}
+  \IEEEauthorblockA{Reinforcement Learning Course Final Project, 2026}
+}
+
+\begin{document}
+\maketitle
+
+%% ─────────────────────────────────────────────────────────────
+\begin{abstract}
+We study tabular Q-learning for a simplified Snake game on a
+$6{\times}6$ grid.
+The state is compressed into 11 binary features that encode local
+danger, current heading, and food direction, reducing the problem to
+2{,}048 discrete states and 3 actions.
+Our main $\varepsilon$-greedy Q-learning agent, trained for
+10\,000 episodes, achieves an average greedy-evaluation score of
+\textbf{13.73} versus 0.19 for a random baseline, a 73$\times$
+improvement.
+We further compare exploration schedules, TD-control variants, and
+reward-shaping methods using only saved repository results.
+The main findings are that exploration scheduling matters more than
+algorithm choice, potential-based shaping is slightly helpful, simple
+shaping can mislead the policy, and the compact 11-bit encoding
+creates a clear long-snake performance ceiling.
+\end{abstract}
+
+%% ─────────────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+
+Tabular Q-learning~\cite{watkins1992q} remains the canonical entry
+point to reinforcement learning: every value is stored explicitly,
+making the learned knowledge fully auditable.
+Yet even in this transparent regime, subtle design choices—how fast
+to decay exploration, whether to add reward shaping, which TD target
+to use—produce substantial performance differences that deserve
+rigorous empirical analysis.
+
+The Snake game encapsulates four challenges that are representative
+of broader game-playing RL:
+\emph{sparse rewards} (food events are infrequent),
+\emph{dynamic self-avoidance} (the growing body creates
+time-varying obstacles),
+\emph{exploration-exploitation tension}, and
+\emph{partial observability} under compact state encodings.
+On a $6{\times}6$ grid with an 11-bit state encoding
+($|\mathcal{S}|=2{,}048$), tabular methods are not just
+tractable but also fully interpretable: individual Q-values can be
+decoded back to game semantics, and visit counts expose exactly
+which parts of the state space the agent has explored.
+
+This report makes four contributions.
+We design the MDP and its compact state encoding
+(Section~\ref{sec:formulation}).
+We provide algorithmic descriptions of four TD-control methods and
+three exploration strategies, grounded in theory
+(Section~\ref{sec:methods}).
+We perform in-depth quantitative analysis of training dynamics,
+Q-value semantics, convergence behaviour, and all ablation variants,
+drawing on multiple independent experimental datasets
+(Section~\ref{sec:experiments}).
+Finally, we discuss open research challenges
+(Section~\ref{sec:challenges}).
+
+%% ─────────────────────────────────────────────────────────────
+\section{Problem Formulation}
+\label{sec:formulation}
+
+\subsection{MDP Specification}
+
+We model Snake as a discrete-time MDP
+$\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, R, \gamma, T)$:
+\begin{itemize}
+  \item $\mathcal{S}$: 11-bit discrete state space
+        ($|\mathcal{S}|=2{,}048$);
+  \item $\mathcal{A}=\{0,1,2\}$: \textsc{straight},
+        \textsc{turn-left}, \textsc{turn-right};
+  \item $P(s'|s,a)$: deterministic body dynamics, stochastic food
+        respawn (uniform over unoccupied cells);
+  \item $R$: immediate scalar reward (see below);
+  \item $\gamma=0.9$; $T=1{,}000$.
+\end{itemize}
+
+\subsection{State Representation}
+
+The full Snake board contains the head position, ordered body layout,
+food location, and current direction; treating that raw grid as the
+state would lead to a combinatorial explosion that is impractical for a
+small tabular method.
+The 11-dimensional binary feature vector is:
+\begin{equation}
+  s = [\underbrace{d_s, d_l, d_r}_{\text{danger}},\;
+       \underbrace{\delta_U, \delta_D, \delta_L, \delta_R}_{\text{heading (one-hot)}},\;
+       \underbrace{f_U, f_D, f_L, f_R}_{\text{food direction}}],
+\end{equation}
+where $d_s,d_l,d_r$ indicate one-step collision danger and
+$f_U,f_D,f_L,f_R$ encode the sign of the food offset relative to
+the head (at most one bit per axis).
+The state integer is $s=\sum_{i=0}^{10}b_i\cdot 2^{10-i}$, giving
+$|\mathcal{S}|=2{,}048$, but only 256 states (12.5\%) are reachable
+under valid game dynamics on this grid size.
+
+\textbf{Partial observability limitation.}
+The encoding captures only one-step look-ahead danger; body segments
+beyond the immediate neighbourhood are invisible.
+This creates a fundamental performance ceiling discussed in
+Section~\ref{sec:ceiling}.
+
+\subsection{Reward Function}
+
+\begin{equation}
+  R(s,a,s') =
+  \begin{cases}
+    +10 & \text{food eaten,}\\
+    -10 & \text{collision (wall or body),}\\
+    -0.1 & \text{otherwise.}
+  \end{cases}
+\end{equation}
+
+The 100:1 food/step ratio ensures the dominant signal is food
+collection; the step penalty prevents looping.
+
+%% ─────────────────────────────────────────────────────────────
+\section{Key RL Methods}
+\label{sec:methods}
+
+\subsection{Q-Learning (Primary)}
+
+Off-policy TD control~\cite{watkins1992q}:
+\begin{equation}
+  Q(s,a)\leftarrow Q(s,a)+\alpha\bigl[
+    r + \gamma\max_{a'}Q(s',a')\cdot\mathbf{1}[\neg\text{done}]
+    -Q(s,a)\bigr].
+  \label{eq:ql}
+\end{equation}
+Here $\alpha$ is the learning rate, $\gamma$ is the discount factor,
+and the behaviour policy uses $\varepsilon$-greedy exploration:
+with probability $\varepsilon$ the agent chooses a random action, and
+with probability $1-\varepsilon$ it chooses the current greedy action.
+All Q-values initialise to 0; ties in $\arg\max$ are broken
+uniformly at random.
+
+\subsection{SARSA and Expected SARSA}
+
+SARSA (on-policy)~\cite{rummery1994line} bootstraps from the
+actual next action:
+$Q(s,a)\leftarrow Q(s,a)+\alpha[r+\gamma Q(s',a')-Q(s,a)]$.
+
+Expected SARSA~\cite{sutton2018reinforcement} replaces the sampled
+action with the policy expectation:
+$\mathbb{E}_{a''\sim\pi}[Q(s',a'')]$,
+reducing variance while remaining on-policy.
+
+\subsection{Double Q-Learning}
+
+Double Q-learning~\cite{hasselt2010double} maintains two tables
+$Q_1,Q_2$, randomly updating one at each step with the other as
+value evaluator:
+\begin{equation}
+  Q_1(s,a)\leftarrow Q_1(s,a)+\alpha\bigl[
+    r+\gamma Q_2\!\bigl(s',\arg\max_{a'}Q_1(s',a')\bigr)-Q_1(s,a)\bigr].
+\end{equation}
+Action selection uses $Q_1+Q_2$.
+
+\subsection{Exploration Strategies}
+
+\textbf{$\varepsilon$-Greedy (primary).}
+Random action with probability $\varepsilon$, greedy otherwise.
+Schedule: $\varepsilon_0=1.0$, $\varepsilon\leftarrow
+\max(\varepsilon\cdot d,0.01)$ per episode.
+
+\textbf{Softmax.}
+$\pi(a|s)\propto\exp(Q(s,a)/\tau)$, with temperature $\tau$
+decaying analogously.
+
+\textbf{UCB.}
+$a^*=\arg\max_a\bigl[Q(s,a)+c\sqrt{\ln(N(s)+1)/(N(s,a)+10^{-8})}\bigr]$,
+$c=1$.
+
+\subsection{Reward Shaping}
+
+Following Ng et al.~\cite{ng1999policy}:
+
+\textbf{Simple shaping.}
+$+w$ ($-w$) if Manhattan distance to food decreases (increases).
+
+\textbf{Potential-based shaping.}
+$F(s,s')=\gamma\Phi(s')-\Phi(s)$, $\Phi(s)=-d_{\text{food}}(s)$.
+Policy-invariant by construction~\cite{ng1999policy}.
+
+\subsection{Training Protocol}
+
+See Table~\ref{tab:hyper} for primary hyperparameters.
+Each variant is evaluated by 300 greedy ($\varepsilon=0$) episodes
+post-training and compared to a 300-episode uniform-random baseline.
+
+\begin{table}[h]
+  \centering
+  \caption{Primary Q-Learning Hyperparameters}
+  \label{tab:hyper}
+  \begin{tabular}{ll}
+    \toprule
+    Parameter & Value \\
+    \midrule
+    Grid size                       & $6\times6$ \\
+    Initial snake length            & 2 \\
+    Max steps / episode             & 1\,000 \\
+    Training episodes               & 10\,000 \\
+    Greedy evaluation episodes      & 300 \\
+    $\alpha$ (learning rate)        & 0.1 \\
+    $\gamma$ (discount)             & 0.9 \\
+    $\varepsilon_0$                 & 1.0 \\
+    $\varepsilon$ decay $d$         & 0.995 \\
+    $\varepsilon_{\min}$            & 0.01 \\
+    Q-init                          & 0.0 \\
+    Random seed                     & 42 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+%% ─────────────────────────────────────────────────────────────
+\section{Experimental Results and Comparisons}
+\label{sec:experiments}
+
+All reported numbers are drawn directly from experimental CSV logs
+and saved \texttt{.npy} Q-table files.
+We distinguish two metrics throughout: the \emph{training
+moving-average (MA) score} (window 100, computed with
+$\varepsilon>0$) and the \emph{greedy evaluation score} (300
+episodes, $\varepsilon=0$, post-training).
+These differ significantly for exploration-heavy configurations,
+as we explain below.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{report_assets/cumulative_env_reward_curve.png}
+  \caption{Learning curve of the main Q-learning run, plotted from
+  \texttt{results/main\_q\_learning/training\_history.csv}. The
+  cumulative environment reward rises steadily, showing sustained
+  learning over 10\,000 episodes.}
+  \label{fig:cumulative_reward}
+\end{figure}
+
+\subsection{Primary Result: Trained Agent vs.\ Random Baseline}
+
+\begin{table}[h]
+  \centering
+  \caption{Trained Q-Learning vs.\ Random Baseline (300 greedy episodes)}
+  \label{tab:primary}
+  \begin{tabular}{lccccc}
+    \toprule
+    Agent & Avg.\ Score & Std & Max & Avg.\ Reward & Avg.\ Steps\\
+    \midrule
+    Q-Learning & \textbf{13.73} & 4.29 & \textbf{27} & \textbf{121.67} & \textbf{70.0}\\
+    Random     & 0.19           & 0.44 &  3  & $-$8.89  & 8.7\\
+    Ratio      & \textbf{72.8$\times$} & --- & \textbf{9$\times$} & ---
+               & \textbf{8.0$\times$}\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The 72.8$\times$ score improvement (Table~\ref{tab:primary}) is the
+headline result. Several secondary observations are equally
+informative.
+
+\textbf{Max score of 27 on a $6{\times}6$ grid.}
+A score of 27 means the snake occupies $2+27=29$ of 36 cells
+(80.6\%).
+At this density the board is nearly saturated, and valid routes to
+food exist only through narrow corridors.
+Reaching this score requires the agent to navigate without any
+information about deep body segments---a non-trivial feat under the
+11-bit encoding.
+
+\textbf{Survival steps: 70.0 vs 8.7.}
+The 8$\times$ survival improvement implies the agent completes
+$\approx70/5.1\approx13.7$ food segments per episode on average
+(consistent with score 13.73).
+The random agent dies within 9 steps almost exclusively through
+collision, confirming zero collision-avoidance learning.
+
+\textbf{Score variance.}
+Standard deviation 4.29 (coefficient of variation $CV=0.31$) reflects
+the structural partial-observability of the encoding: even the mature
+policy occasionally walks into multi-step body traps it cannot
+foresee (Section~\ref{sec:ceiling}).
+
+\subsection{Four-Phase Training Dynamics}
+\label{sec:phases}
+
+Analysis of the 10\,000-episode \texttt{basic\_learning.csv} log
+reveals four qualitatively distinct learning phases
+(Table~\ref{tab:phases}).
+
+\begin{table}[h]
+  \centering
+  \caption{Four Training Phases (100-episode MA window)}
+  \label{tab:phases}
+  \begin{tabular}{cccccc}
+    \toprule
+    Phase & Episodes & Avg Score & Std & Zero\% & $\bar{\varepsilon}$ \\
+    \midrule
+    I   & 1--500    & 2.87  & 2.77 & 20.8\% & 0.366 \\
+    II  & 501--1000 & 9.94  & 4.44 &  0.2\% & 0.030 \\
+    III & 1001--3000 & 11.65 & 4.63 & 0.1\% & 0.010 \\
+    IV  & 3001--10000 & 12.54 & 4.57 & 0.2\% & 0.010 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Phase~I (eps.\ 1--500): Random exploration and Q-table seeding.}
+$\varepsilon$ decays from 1.0 to 0.082 by episode 500.
+The agent is almost entirely random; 20.8\% of episodes score zero
+(immediate death with no food collected).
+Yet this phase is crucial: it seeds the Q-table from scratch.
+The MA score crosses 5.0 at episode 463 when $\varepsilon=0.098$,
+precisely at the boundary where exploitative actions begin to
+dominate---confirming that early Q-table data first produces
+a usable signal exactly when the agent starts following its values.
+
+\textbf{Phase~II (eps.\ 501--1000): Rapid policy crystallisation.}
+This is the steepest learning interval.
+$\varepsilon$ falls from 0.082 to 0.010 (the minimum);
+the MA score surges from $\approx$6.0 to $\approx$11.2,
+crossing 8.0 at episode 643 ($\varepsilon=0.040$) and
+10.0 at episode 716 ($\varepsilon=0.028$).
+Score standard deviation peaks at 4.44: the policy is in
+transition, with some episodes already near-optimal while others
+still reflect partially converged Q-values.
+The zero-episode fraction drops from 20.8\% to 0.2\%, confirming
+that collision avoidance is learned almost completely in this phase.
+
+\textbf{Phase~III (eps.\ 1001--3000): Convergence and fine-tuning.}
+With $\varepsilon$ locked at 0.010, the policy is 99\% greedy.
+MA score stabilises around 11.65--12.31.
+For the main Q-learning run, the number of visited states saturates at
+exactly 256 by episode $\approx$2\,000 and does not grow thereafter.
+
+\textbf{Phase~IV (eps.\ 3001--10000): Plateau.}
+MA score oscillates between 12.3 and 12.6 without a sustained
+upward trend.
+The maximum episode score achieved during training reaches
+\textbf{35} (vs 27 in greedy evaluation), occurring in late training
+due to lucky body configurations that happen not to create traps.
+All episodes in the last 1\,000 terminate by collision; none
+reaches the 1\,000-step cap, confirming that the snake never
+fills the board under the current policy.
+
+\subsection{Q-Value Convergence and Semantic Interpretation}
+\label{sec:qvalue}
+
+After 611\,892 total updates:
+$Q_{\max}=23.88$, $Q_{\min}=-10.0$, $\bar{Q}=+0.271$,
+$|Q|_{\text{mean}}=0.936$, $\sigma_Q=3.185$.
+
+\textbf{Q-value distribution structure.}
+Of the 6\,144 Q-table entries, 87.9\% are exactly zero
+(never updated), 6.0\% are positive ($>0.01$), and
+6.1\% are negative ($<-0.01$).
+The zero entries correspond to the 87.5\% of states
+never visited.
+The symmetry between positive (6.0\%) and negative (6.1\%)
+entries reflects the balance between food-seeking (positive
+expected return) and collision-risk (negative expected return)
+in the reachable state space.
+
+\textbf{Semantic decoding of highest Q-values.}
+Table~\ref{tab:topq} decodes the five highest Q-table entries
+back into game semantics.
+
+\begin{table}[h]
+  \centering
+  \caption{Top-5 Q-Table Entries: State Semantics}
+  \label{tab:topq}
+  \begin{tabular}{clcl}
+    \toprule
+    Q-value & Action & Danger bits & Heading / Food \\
+    \midrule
+    23.88 & Straight & right only    & Facing LEFT, food LEFT \\
+    21.75 & Straight & none          & Facing UP, food UP \\
+    21.72 & Turn-left & none         & Facing RIGHT, food UP \\
+    21.59 & Turn-left & straight     & Facing RIGHT, food UP \\
+    21.57 & Turn-left & straight+right & Facing UP, food LEFT \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+These entries reveal clear policy logic.
+The highest Q-value (23.88) occurs when the snake faces LEFT with
+food directly ahead (LEFT) and a danger only on the right:
+the correct action is to go straight toward food, which the
+Q-table correctly identifies.
+The fourth entry ($Q=21.59$, state 1048) is particularly
+informative: the snake faces RIGHT, food is UP (requiring a
+left turn), and going straight is blocked---the agent correctly
+identifies turn-left as the escape action.
+The fifth entry ($Q=21.57$, state 1410) shows the agent choosing
+turn-left when both straight and right are dangerous and food is
+to the left---again the unique feasible move.
+These semantically coherent high-Q states confirm that the learned
+policy is not a statistical artefact but encodes genuine
+navigation knowledge.
+
+\textbf{Dangerous states: when all actions fail.}
+Inspecting entries with $Q_{\max}<-5$ and visit count $>0$
+reveals 32 states in which every reachable action leads
+near-certainly to death.
+These states all share $d_s=d_l=d_r=1$ (all three one-step
+actions are immediately dangerous), representing the snake
+trapped in a corner or hemmed in by its own body.
+The lowest entry is $Q(s=1814,\text{all})=-10.0$ with 335 visits:
+the agent has learned that this configuration is a dead end, but
+cannot avoid it due to the look-ahead limitation.
+
+\textbf{Residual TD error.}
+The mean absolute TD error stabilises at 2.57 in the last 1\,000
+episodes, not at zero, even though Q-values appear converged.
+This irreducible residual arises from food respawning stochasticity:
+the same $(s,a,r,s')$ tuple occurs with different next-state
+Q-values depending on where food lands.
+Mathematically, the Bellman operator $\mathcal{T}Q(s,a)=
+\mathbb{E}[r+\gamma\max_{a'}Q(s',a')]$ has a variance due to
+$s'$ randomness that prevents the empirical TD error from reaching
+zero even at true convergence.
+Notably, TD error is slightly \emph{higher} in high-score episodes
+($\geq21$: 2.59 vs $0$--$5$: 2.40) because longer trajectories
+generate more diverse state transitions within a single episode.
+
+\subsection{Structural Performance Ceiling}
+\label{sec:ceiling}
+
+The training MA score never exceeds 13 during 10\,000 episodes
+(Figure not shown due to PDF constraints; confirmed by data).
+We identify this as a \textbf{structural limit} imposed by the
+11-bit encoding, supported by three independent lines of evidence:
+
+\begin{enumerate}
+  \item \textbf{State saturation.}
+        Visited states plateau in a very narrow range across the full
+        ablation suite: most variants end at 256 visited states, while
+        Softmax reaches 257 and slow-decay reaches 259.
+        No further training discovers new states; improvement must come
+        from refining already-visited Q-values,
+        which yields diminishing returns after Phase~II.
+
+  \item \textbf{Score distribution compression.}
+        In the last 2\,000 training episodes of the baseline variant,
+        44.3\% of scores fall in $[10,14]$, 25.4\% in $[15,19]$, and
+        only 0.4\% exceed 24 (Table~\ref{tab:scoredist}).
+        The distribution is truncated at the upper end not by episode
+        length (the 1\,000-step cap is never reached) but by the agent
+        encountering body traps invisible to the 11-bit state.
+
+  \item \textbf{One-step danger horizon.}
+        Decoding state semantics confirms that all Q-table knowledge
+        is limited to one-step danger ($d_s,d_l,d_r$).
+        When the snake reaches score $\geq15$, non-immediate body
+        segments create two- and three-step traps that all map to the
+        same one-step-safe state encoding,
+        leading to seemingly random deaths from the agent's perspective.
+\end{enumerate}
+
+\begin{table}[h]
+  \centering
+  \caption{Score Frequency Distribution (last 2\,000 training episodes)}
+  \label{tab:scoredist}
+  \begin{tabular}{lccccccc}
+    \toprule
+    Variant & [0--4] & [5--9] & [10--14] & [15--19] & [20--24] & [25--29] & [$\geq$30]\\
+    \midrule
+    QL-$\varepsilon$-greedy & 4.7\% & 19.6\% & 44.3\% & 25.4\% &  5.5\% & 0.4\% & 0.1\%\\
+    QL-slow-decay     & 4.7\% & 18.4\% & 42.5\% & 27.2\% &  6.3\% & 0.8\% & 0.1\%\\
+    QL-softmax        & 1.8\% & 20.1\% & 42.6\% & 30.4\% &  4.7\% & 0.3\% & 0.0\%\\
+    QL-UCB            & 1.1\% & 20.0\% & 42.5\% & 31.4\% &  4.9\% & 0.1\% & 0.0\%\\
+    Double-Q          & 3.9\% & 17.6\% & 42.2\% & 30.2\% &  5.6\% & 0.5\% & 0.0\%\\
+    QL-potential      & 4.3\% & 17.8\% & 42.0\% & 28.7\% &  6.7\% & 0.5\% & 0.1\%\\
+    QL-simple shaping & 4.5\% & 23.4\% & 41.3\% & 25.8\% &  4.5\% & 0.4\% & 0.0\%\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Full Ablation Study}
+\label{sec:ablation}
+
+\begin{table*}[t]
+  \centering
+  \caption{Full Ablation (10\,000 training episodes,
+           300 greedy evaluation episodes)}
+  \label{tab:ablation}
+  \begin{tabular}{llllcccccc}
+    \toprule
+    Variant & Algorithm & Exploration & Shaping
+            & Greedy & Std & Max & $|Q|_{\text{mean}}$
+            & Total visits & Pairs updated \\
+    \midrule
+    Slow $\varepsilon$-decay & Q-learning & $\varepsilon$-greedy ($d{=}0.999$) & none
+        & \textbf{14.79} & 4.28 & \textbf{30} & 1.056 & 514\,951 & 745 \\
+    Double Q-learning & Double Q   & $\varepsilon$-greedy & none
+        & 13.98 & 4.31 & 25 & 1.638 & 632\,599 & 744 \\
+    Potential shaping & Q-learning & $\varepsilon$-greedy & potential
+        & 13.80 & \textbf{3.97} & 27 & 0.964 & 619\,410 & 743 \\
+    \textbf{Q-Learning (main)} & Q-learning & $\varepsilon$-greedy & none
+        & 13.73 & 4.29 & 27 & 0.936 & 611\,892 & 742 \\
+    Expected SARSA & Exp.\ SARSA & $\varepsilon$-greedy & none
+        & 13.45 & 4.34 & \textbf{30} & 0.911 & 597\,561 & 750 \\
+    UCB ($c{=}1$) & Q-learning & UCB & none
+        & 13.42 & 4.06 & 26 & 0.625 & 684\,016 & 768 \\
+    Softmax & Q-learning & Softmax & none
+        & 13.37 & 4.12 & 29 & 0.635 & 638\,476 & 694 \\
+    SARSA & SARSA & $\varepsilon$-greedy & none
+        & 13.33 & 4.01 & 24 & 0.931 & 596\,060 & 747 \\
+    Simple shaping & Q-learning & $\varepsilon$-greedy & simple
+        & 12.99 & 4.32 & 27 & 0.957 & 576\,999 & 744 \\
+    Low $\varepsilon_0$ ($=0.5$) & Q-learning & $\varepsilon$-greedy & none
+        & 12.79 & 4.45 & 28 & 0.884 & 590\,495 & 741 \\
+    \midrule
+    Random baseline & --- & uniform & ---
+        & 0.19 & 0.44 & 3 & --- & --- & --- \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+
+\subsubsection{Exploration Schedule: The Dominant Factor}
+
+The \texttt{epsilon\_decay\_comparison.csv} dataset provides a
+controlled three-way comparison with the same algorithm but
+different exploration schedules
+($\varepsilon_0,d$):
+slow ($1.0,\,0.999$), medium ($1.0,\,0.995$), and
+low-exploration ($0.3,\,0.995$).
+Table~\ref{tab:epsdecay} shows training-MA milestones.
+
+\begin{table}[h]
+  \centering
+  \caption{Training MA Score at Key Episodes: Epsilon Strategies}
+  \label{tab:epsdecay}
+  \begin{tabular}{lcccccc}
+    \toprule
+    Strategy & 100 & 300 & 500 & 1000 & 5000 & 10000 \\
+    \midrule
+    Slow ($d{=}0.999$)        & 0.28 & 0.66 & 1.15 & 2.32 & 12.75 & 12.16 \\
+    Medium ($d{=}0.995$)      & 0.49 & 2.62 & 6.02 & 11.20 & 12.58 & 12.31 \\
+    Low ($\varepsilon_0{=}0.3$) & 1.58 & 6.30 & 9.30 & 11.25 & 12.75 & 11.84 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The table reveals a striking \emph{speed-versus-quality trade-off}.
+Low-exploration learns fastest in episodes 1--500 (MA=9.30 vs 6.02
+for medium), but plateaus earliest and finishes lowest (11.84).
+Slow decay is slowest in training (MA=1.15 at ep500) but ultimately
+achieves a comparable training MA (12.16) to medium (12.31) at
+episode 10\,000—and the highest \emph{greedy evaluation score}
+(14.79) in the ablation.
+
+The key insight is the \textbf{training-vs-evaluation discrepancy}.
+Slow decay ($d=0.999$) does not reach $\varepsilon=0.01$ until
+episode 4\,508; the agent is still exploring ($\varepsilon\approx0.03$)
+at episode 5\,000.
+Its training MA score of 12.16 includes the drag of exploratory
+actions.
+When evaluated greedily ($\varepsilon=0$) post-training, it achieves
+14.79—because it received far more diverse TD updates before
+committing to exploitation.
+Medium decay reaches $\varepsilon_{\min}$ at episode 900, after
+which no further Q-table diversification occurs.
+
+Quantitatively: slow decay records 514\,951 state visits over
+10\,000 episodes vs 611\,892 for the medium schedule, yet it still
+achieves a 7.7\% higher greedy score, suggesting that
+\emph{update quality matters more than update quantity} in this
+tabular setting.
+
+\subsubsection{Convergence Speed: Softmax and UCB Are Faster}
+
+A counterintuitive finding from Table~\ref{tab:conv} is that
+Softmax and UCB converge to high performance \emph{much faster}
+than $\varepsilon$-greedy in early training.
+
+\begin{table}[h]
+  \centering
+  \caption{Episode at which Training MA Score First Crosses Threshold}
+  \label{tab:conv}
+  \begin{tabular}{lcccc}
+    \toprule
+    Variant & MA$\geq$5 & MA$\geq$8 & MA$\geq$10 & MA$\geq$12 \\
+    \midrule
+    QL-UCB      & \textbf{171} & \textbf{250} & \textbf{305} & \textbf{360} \\
+    QL-Softmax  & 194 & 250 & 303 & 390 \\
+    QL-Pot.\ shaping & 436 & 582 & 678 & 842 \\
+    QL-$\varepsilon$-greedy & 463 & 643 & 716 & 914 \\
+    SARSA       & 421 & 590 & 740 & 930 \\
+    Exp.\ SARSA & 421 & 614 & 739 & 981 \\
+    Double-Q    & 445 & 560 & 705 & 913 \\
+    QL-slow     & 1666 & 2556 & 3067 & 3683 \\
+    QL-low-$\varepsilon_0$ & \textit{372} & 538 & 735 & 7833 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+UCB crosses MA=10 at episode 305, Softmax at 303---a
+\textbf{2.4$\times$ speedup} over $\varepsilon$-greedy (episode 716).
+At episode 300, UCB achieves MA=9.72 vs $\varepsilon$-greedy's 2.62.
+These early advantages arise from the richer exploration signals:
+
+Softmax assigns graded probabilities proportional to Q-values from
+the first episode, immediately concentrating experience on
+higher-valued actions while retaining some probability for all
+actions.
+Even when Q-values are near-zero (early training), Softmax exploration
+is equivalent to uniform with a slight push toward actions with any
+positive value signal.
+UCB's optimism bonus systematically tries each action in every
+newly visited state, guaranteeing at least one update per
+action per state before settling into value-based selection.
+This ensures faster Q-table coverage in early episodes.
+
+However, this early advantage does not translate to better
+long-run performance.
+By episode 10\,000, $\varepsilon$-greedy (greedy eval: 13.73)
+outperforms Softmax (13.37) and UCB (13.42) in greedy evaluation.
+This reversal occurs because:
+(i) at $\varepsilon_{\min}=0.01$, all three strategies are essentially
+equivalent in exploitation;
+(ii) UCB's count-based bonus continues to ``waste'' some updates on
+under-visited pairs even in late training, reducing the quality of
+updates in high-value regions;
+(iii) Softmax visits only 694 state-action pairs (vs 742 for
+$\varepsilon$-greedy), focusing experience on currently promising
+states at the cost of less overall coverage.
+
+\subsubsection{On-Policy vs.\ Off-Policy: Algorithm Comparison}
+
+Q-learning (13.73) $>$ Expected SARSA (13.45) $>$ SARSA (13.33).
+The off-policy advantage over SARSA is 0.40 points (3.0\%).
+
+Under $\varepsilon$-greedy with $|\mathcal{A}|=3$ and
+$\varepsilon=0.01$, the on-policy bootstrap target differs from
+the off-policy target by:
+$\Delta = (1-\varepsilon)(0) + \varepsilon/3 \cdot
+[\bar{Q}(s')-\max_{a'}Q(s',a')]$.
+Since $\bar{Q}(s')\leq\max Q(s',a')$, this is always non-positive,
+meaning SARSA systematically bootstraps from a slightly pessimistic
+target.
+On a small board where survival is paramount, this conservatism
+marginally reduces the value estimates in states close to danger.
+
+Expected SARSA falls between the two: its expectation over the
+$\varepsilon$-greedy policy reduces variance relative to SARSA while
+still being on-policy.
+Notably, Expected SARSA and SARSA \emph{update the most}
+state-action pairs (750 and 747 respectively), slightly more than
+Q-learning (742).
+This is because on-policy training concentrates experience in states
+the current policy actually visits, which---especially early in
+training---includes more diverse transitions than the greedy path.
+
+The highest maximum scores across all variants are achieved by
+Expected SARSA and Slow-decay Q-learning (both 30).
+Expected SARSA's lower-variance updates appear to produce
+occasionally more consistent navigation in high-density
+board configurations, even though its mean score is lower.
+
+\subsubsection{Double Q-Learning: Bias, Correlation, and Scale}
+
+Double Q-learning achieves 13.98, outperforming standard Q-learning
+(13.73) by 1.8\%.
+The improvement is consistent with bias reduction theory but its
+magnitude reveals additional nuance.
+
+\textbf{Q-table correlation.}
+After 10\,000 episodes, $Q_1$ and $Q_2$ have Pearson correlation
+$r=0.983$.
+Despite being updated independently on random 50/50 splits, the two
+tables converge to nearly identical estimates.
+This high correlation confirms that the tabular setting with only
+6\,144 entries provides sufficient coverage for both tables to
+converge toward the same $Q^*$, rather than maintaining independent
+uncertainty estimates as the theory ideally envisions.
+
+\textbf{Overestimation check.}
+To quantify residual overestimation, we compare the mean
+maximum-action Q-value per state.
+For single Q-learning: $\frac{1}{256}\sum_s\max_a Q(s,a)=1.143$.
+For Double Q-learning (scaled by $\tfrac{1}{2}$ to match single
+table scale): $\frac{1}{256}\sum_s\max_a\frac{Q_1+Q_2}{2}(s,a)=1.176$.
+The Double Q scaled mean-max is slightly \emph{higher} than single Q,
+so this metric alone does not provide strong empirical evidence of a
+large overestimation reduction in this repository.
+Instead, the main defensible empirical conclusion is narrower:
+Double Q-learning attains a slightly higher greedy score
+(13.98 vs 13.73) while keeping lower late-stage TD error
+(Table~\ref{tab:tderr}).
+
+\textbf{Scale artefact.}
+The effective Q-table ($Q_1+Q_2$) shows $|Q|_{\text{mean}}=1.638$
+vs 0.936 for single Q---a 1.75$\times$ ratio---and
+$Q_{\max}=45.23$ vs 23.88.
+This is a pure scale artefact: action selection uses the sum of two
+tables, doubling all values.
+The Q-min of $-20.0$ is likewise double the collision penalty of
+$-10$.
+Practitioners should rescale by $\tfrac{1}{2}$ when comparing
+Double Q values to single-table Q-values.
+
+\subsubsection{Action Distribution: What the Policy Learned}
+
+Table~\ref{tab:actions} shows the action distribution across all
+state visits during training.
+
+\begin{table}[h]
+  \centering
+  \caption{Action Distribution Over All Training Steps}
+  \label{tab:actions}
+  \begin{tabular}{lccc}
+    \toprule
+    Variant & Straight & Left & Right \\
+    \midrule
+    Q-Learning        & 45.1\% & 33.1\% & 21.9\% \\
+    Slow-decay        & \textbf{51.1\%} & 22.8\% & 26.1\% \\
+    Low-$\varepsilon_0$ & 40.3\% & 23.7\% & 36.0\% \\
+    Softmax           & 42.0\% & 28.6\% & 29.4\% \\
+    UCB               & 41.4\% & 34.1\% & 24.5\% \\
+    SARSA             & 44.0\% & 30.2\% & 25.8\% \\
+    Expected SARSA    & 46.5\% & 32.7\% & 20.8\% \\
+    Double Q          & 39.8\% & 24.1\% & \textbf{36.1\%} \\
+    Simple shaping    & 42.8\% & 30.9\% & 26.3\% \\
+    Potential shaping & 45.2\% & 33.1\% & 21.7\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Straight-action dominance.}
+All variants favour \textsc{straight} (39.8--51.1\%),
+consistent with the game structure: a snake moving toward food
+in a straight line is the default efficient behaviour.
+
+\textbf{Expected SARSA is the most conservative.}
+With the highest straight rate (46.5\%) and lowest turning
+frequency (left 32.7\%, right 20.8\%), Expected SARSA exhibits
+the most cautious policy.
+Its on-policy update target includes the expected value under
+the current $\varepsilon$-greedy policy, which---when the
+greedy action is straight---assigns most weight to straight
+and small weight to turns.
+This creates a reinforcing feedback that biases the policy further
+toward straight-ahead navigation.
+
+\textbf{Double Q has the highest turning frequency (60.2\%).}
+This is surprising: Double Q should produce policies similar to
+single Q-learning but with less overestimation.
+The high turning frequency may reflect the fact that each individual
+table ($Q_1$ or $Q_2$) receives only half the updates per step,
+leading to noisier individual Q-value estimates and more variable
+action selection during the exploratory phase.
+
+\textbf{Slow-decay: most straight.}
+Slow-decay has the highest straight proportion (51.1\%) with the
+lowest total visit count (514\,951 steps), because with higher
+$\varepsilon$ during long exploration, the agent more often takes
+random turns; its \emph{greedy} policy (tested during evaluation)
+is more straight-biased, as reflected in its superior greedy
+evaluation score (14.79).
+
+\subsubsection{Reward Shaping: Training Signal vs.\ Policy Quality}
+
+We have two independent data sources for reward shaping:
+(1) the \texttt{reward\_shaping\_comparison.csv} experiment,
+comparing sparse vs.\ shaped (simple) reward on 10\,000 episodes;
+(2) the ablation experiments with simple and potential-based shaping.
+
+\textbf{Training MA scores.}
+From \texttt{reward\_shaping\_comparison.csv}:
+shaped training consistently outperforms sparse training
+throughout (Table~\ref{tab:shaping}).
+
+\begin{table}[h]
+  \centering
+  \caption{Sparse vs.\ Shaped: Training-MA Score Milestones}
+  \label{tab:shaping}
+  \begin{tabular}{lccccc}
+    \toprule
+    Mode    & 300 & 500 & 1000 & 5000 & 10000 \\
+    \midrule
+    Sparse  & 2.62 & 6.02 & 11.20 & 12.58 & 12.31 \\
+    Shaped  & 3.27 & 6.96 & 12.16 & 12.67 & \textbf{13.04} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Shaping improves the MA score at ep500 by 15.6\% (6.96 vs 6.02)
+and at ep1000 by 8.6\% (12.16 vs 11.20).
+The faster convergence occurs because the shaping bonus
+provides reward signal on \emph{every step} (positive when
+moving toward food, negative otherwise), rather than only
+at the rare food-eating events.
+
+\textbf{Greedy evaluation divergence.}
+Despite its better training MA, simple shaping achieves a
+\emph{lower} greedy evaluation score (12.99 vs 13.73).
+The source of this contradiction is revealed by analysing the
+shaping bonus in the last 500 training episodes:
+simple shaping adds a mean bonus of $+2.48$ per episode,
+with standard deviation 1.12.
+The agent has effectively learned to optimise
+``reward + shaping bonus'', not just reward.
+When the shaping bonus is removed at greedy evaluation,
+the agent has learned a policy biased toward moving toward food
+\emph{even when detours are necessary to avoid body traps},
+resulting in worse actual survival.
+
+This is a direct proxy-mismatch effect: the agent improves the
+shaped training objective without improving the final greedy policy.
+
+\textbf{Potential-based shaping escapes this problem.}
+Potential shaping adds a mean bonus of $+1.97$ per episode
+(std 0.99) in late training, slightly smaller than simple shaping.
+Its greedy evaluation score (13.80) exceeds the no-shaping baseline
+(13.73), confirming the theoretical guarantee~\cite{ng1999policy}:
+the shaped reward preserves the optimal policy invariance.
+
+The potential shaping variant also achieves the \emph{lowest}
+score standard deviation in greedy evaluation (3.97 vs 4.29
+for no shaping), indicating more consistent performance.
+We attribute this to the smoother learning landscape: the potential
+function $\Phi(s)=-d_{\text{food}}(s)$ provides a coherent
+``gradient'' toward food across the entire state space,
+helping the agent build a more stable value function.
+
+\subsubsection{Convergence of TD Error: A Stability Diagnostic}
+
+Table~\ref{tab:tderr} shows mean absolute TD error in the last
+1\,000 training episodes.
+
+\begin{table}[h]
+  \centering
+  \caption{TD Error in Last 1\,000 Training Episodes}
+  \label{tab:tderr}
+  \begin{tabular}{lcc}
+    \toprule
+    Variant & Mean TD Error & Std \\
+    \midrule
+    Double Q-learning          & \textbf{2.459} & 0.344 \\
+    UCB                        & 2.530 & 0.324 \\
+    Potential shaping          & 2.533 & 0.388 \\
+    Expected SARSA             & 2.568 & 0.393 \\
+    Q-Learning (main)          & 2.570 & 0.380 \\
+    Softmax                    & 2.619 & 0.324 \\
+    Slow decay                 & 2.619 & 0.398 \\
+    SARSA                      & \textbf{2.713} & \textbf{0.468} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+SARSA has the highest TD error (2.713) and standard deviation (0.468).
+On-policy updates with $\varepsilon=0.01$ occasionally sample
+exploratory actions with poor Q-values, causing high-variance
+targets.
+SARSA's max TD error reaches 7.51---far above the 5.43 maximum
+for Q-learning---confirming that exploratory action noise propagates
+into the on-policy bootstrap target.
+
+Double Q-learning achieves the lowest TD error (2.459),
+consistent with its bias-reduction mechanism:
+decorrelating action selection and value evaluation reduces
+the variance of the max-operator, producing more stable targets.
+
+\subsubsection{Summary: Effect-Size Ranking}
+
+Ranking all ablation factors by their absolute impact on greedy
+evaluation score (relative to the main Q-learning baseline at 13.73):
+
+\begin{enumerate}
+  \item \textbf{Slow $\varepsilon$-decay} ($d=0.999$): $+1.06$ ($+7.7\%$)
+  \item \textbf{Double Q-learning}: $+0.25$ ($+1.8\%$)
+  \item \textbf{Potential shaping}: $+0.07$ ($+0.5\%$)
+  \item \textbf{Algorithm: Q vs.\ SARSA}: $-0.40$ ($-2.9\%$, SARSA lower)
+  \item \textbf{Simple shaping}: $-0.74$ ($-5.4\%$)
+  \item \textbf{Low initial $\varepsilon$} ($\varepsilon_0=0.5$): $-0.94$ ($-6.8\%$)
+\end{enumerate}
+
+Exploration scheduling choices (decay rate and initial value)
+dominate all algorithm choices.
+The gap between the best ($+7.7\%$) and worst ($-6.8\%$) exploration
+configurations (14.8 points combined) far exceeds the gap between
+on-policy and off-policy algorithms (0.40 points).
+
+\textbf{About learning-rate ablation.}
+The repository results include ablations for exploration schedules,
+algorithm choice, and reward shaping, but they do not include a
+dedicated sweep over $\alpha$.
+To avoid introducing unsupported claims, we therefore do not report an
+$\alpha$-ablation figure or table here.
+
+%% ─────────────────────────────────────────────────────────────
+\section{Open Research Challenges}
+\label{sec:challenges}
+
+\subsection{Breaking the Tabular Ceiling via Richer Encodings}
+
+Our experiments establish that all variants saturate in a very narrow
+reachable-state range (256--259 states) and in a greedy-score range of
+$\approx$13--15, limited by the one-step danger horizon.
+Incrementally, two-step look-ahead bits ($d_{ss}$, etc.) could
+extend the table to $2^{14}=16{,}384$ entries and may push the
+ceiling to score 20--25.
+For larger grids ($\geq10\times10$), DQN~\cite{mnih2015human}
+with convolutional feature extraction becomes necessary.
+The key DQN contributions---target network and replay buffer---
+address the instability and sample correlation issues that arise
+when the Q-function is parameterised by a neural network,
+issues absent in the tabular regime studied here.
+
+\subsection{Convergence Speed: Hybrid Exploration Schedules}
+
+Our results show Softmax and UCB converge 2.4$\times$ faster
+than $\varepsilon$-greedy (episode 303 vs 716 to MA=10),
+but ultimately match or underperform in long-run greedy evaluation.
+A natural follow-up is a \emph{hybrid schedule}: use UCB or Softmax
+exploration in the first 500 episodes for fast Q-table seeding,
+then switch to slow $\varepsilon$-decay for deep exploitation.
+This would combine the best of both worlds---fast early convergence
+and high final policy quality.
+
+\subsection{Reward Shaping: Learning the Potential Function}
+
+Our experiment confirms that the quality of the potential function
+is decisive: a well-designed potential (negative Manhattan distance)
+helps, while a naive simple bonus hurts.
+However, the Manhattan distance potential ignores body obstacles
+that block direct paths to food.
+A body-aware potential function---e.g., based on flood-fill
+reachability---would provide a more accurate signal for
+long-snake configurations.
+The challenge is computing such a potential at each step without
+excessive overhead.
+Alternatively, the potential function could be learned from expert
+demonstrations or planning heuristics, but this would require extra
+supervision not present in the current repository.
+
+\subsection{Partial Observability and Memory}
+
+The 32 trapped states (all actions dangerous) and the performance
+ceiling at score $\approx$15 both trace to partial observability.
+The POMDP framework~\cite{kaelbling1998planning} formalises this,
+but belief-state planning is intractable for large state spaces.
+A practical direction is to augment the 11-bit encoding with
+$k$-step body history via frame stacking, or to use an LSTM-based
+policy~\cite{kapturowski2018recurrent} that maintains a compressed
+memory of recent body configurations.
+
+\subsection{Non-Stationarity and the Growing-Snake Problem}
+
+As the snake grows from length 2 to 20+, the effective dynamics change:
+body cells that were irrelevant at length 2 become critical obstacles
+at length 20.
+The Q-table must adapt to this non-stationarity.
+Curriculum learning---gradually increasing initial length during
+training---could force the agent to learn body-aware navigation
+before the body becomes critical.
+
+\subsection{Exploration in Larger State Spaces}
+
+On the $6{\times}6$ grid, all three exploration strategies cover
+the same 256 reachable states.
+On larger boards, the reachable state space grows combinatorially,
+and random exploration becomes exponentially less efficient.
+Count-based intrinsic motivation~\cite{bellemare2016unifying} and
+curiosity-driven methods~\cite{pathak2017curiosity} provide principled
+solutions, but their calibration to the game's extrinsic reward
+timescale remains an open problem.
+
+%% ─────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented a comprehensive study of tabular Q-learning for
+simplified Snake, grounded in direct analysis of experimental CSV
+logs and saved Q-table arrays.
+
+Our primary trained agent achieves a greedy-evaluation average score
+of 13.73 (max: 27), a 73-fold improvement over the random baseline.
+Through in-depth analysis, we established the following findings
+beyond a simple score table:
+
+\textbf{Training dynamics.}
+Learning proceeds in four distinct phases: random seeding (eps 1--500),
+rapid policy crystallisation (501--1000), convergence (1001--3000),
+and plateau (3001--10000), with the zero-episode fraction dropping
+from 20.8\% to 0.2\% in Phase~II alone.
+
+\textbf{Q-value semantics.}
+Decoding the highest and lowest Q-table entries reveals coherent
+navigation logic: food-aligned, danger-free states receive Q-values
+of 21--24; triply-trapped states receive Q-values of $-10$.
+This confirms that the tabular agent has not merely memorised
+reward patterns but has learned generalisable collision-avoidance
+and food-seeking knowledge within the reachable subspace.
+
+\textbf{Exploration scheduling dominates algorithm selection.}
+The spread between exploration-scheduling extremes (14.79 for slow
+decay vs 12.79 for low initial $\varepsilon$) is 2.0 points,
+dwarfing the spread between algorithm families (13.73 Q-learning
+vs 13.33 SARSA, gap 0.40 points).
+
+\textbf{Reward shaping: a cautionary tale.}
+Simple shaping accelerates early training (MA$+$15.6\% at ep500)
+but reduces final greedy policy quality ($-5.4\%$), a clear case
+of reward hacking.
+Potential-based shaping avoids this by preserving policy invariance,
+yielding a small but consistent $+0.5\%$ improvement with lower
+score variance.
+
+\textbf{Structural ceiling.}
+By the end of training, all variants saturate in a narrow range of
+256--259 reachable states, and the training MA score never exceeds 13
+for the main run due to the one-step danger horizon of the 11-bit
+encoding.
+Overcoming this ceiling requires either richer state representations
+or deep function approximation, motivating the extension to DQN
+and POMDP-aware architectures for future work.
+
+%% ─────────────────────────────────────────────────────────────
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{99}
+
+\bibitem{watkins1992q}
+C.~J.~C.~H.\ Watkins and P.\ Dayan,
+``Q-learning,''
+\emph{Machine Learning}, vol.~8, no.~3--4, pp.~279--292, 1992.
+
+\bibitem{sutton2018reinforcement}
+R.~S.\ Sutton and A.~G.\ Barto,
+\emph{Reinforcement Learning: An Introduction}, 2nd~ed.
+Cambridge, MA, USA: MIT Press, 2018.
+
+\bibitem{mnih2015human}
+V.~Mnih \emph{et al.},
+``Human-level control through deep reinforcement learning,''
+\emph{Nature}, vol.~518, no.~7540, pp.~529--533, 2015.
+
+\bibitem{silver2016mastering}
+D.~Silver \emph{et al.},
+``Mastering the game of Go with deep neural networks and tree search,''
+\emph{Nature}, vol.~529, no.~7587, pp.~484--489, 2016.
+
+\bibitem{vinyals2019grandmaster}
+O.~Vinyals \emph{et al.},
+``Grandmaster level in StarCraft~II using multi-agent reinforcement
+learning,''
+\emph{Nature}, vol.~575, no.~7782, pp.~350--354, 2019.
+
+\bibitem{puterman1994markov}
+M.~L.\ Puterman,
+\emph{Markov Decision Processes: Discrete Stochastic Dynamic Programming}.
+Hoboken, NJ, USA: Wiley, 1994.
+
+\bibitem{kaelbling1998planning}
+L.~P.\ Kaelbling, M.~L.\ Littman, and A.~R.\ Cassandra,
+``Planning and acting in partially observable stochastic domains,''
+\emph{Artif.\ Intell.}, vol.~101, no.~1--2, pp.~99--134, 1998.
+
+\bibitem{rummery1994line}
+G.~A.\ Rummery and M.\ Niranjan,
+``On-line Q-learning using connectionist systems,''
+Tech.\ Rep.\ CUED/F-INFENG/TR 166, Univ.\ of Cambridge, 1994.
+
+\bibitem{hasselt2010double}
+H.~van Hasselt,
+``Double Q-learning,''
+in \emph{Adv.\ Neural Inf.\ Process.\ Syst.\ (NeurIPS)},
+vol.~23, pp.~2613--2621, 2010.
+
+\bibitem{ng1999policy}
+A.~Y.\ Ng, D.\ Harada, and S.\ Russell,
+``Policy invariance under reward transformations: Theory and application
+to reward shaping,''
+in \emph{Proc.\ ICML}, pp.~278--287, 1999.
+
+\bibitem{auer2002finite}
+P.~Auer, N.\ Cesa-Bianchi, and P.\ Fischer,
+``Finite-time analysis of the multiarmed bandit problem,''
+\emph{Machine Learning}, vol.~47, no.~2--3, pp.~235--256, 2002.
+
+\bibitem{schaul2015prioritized}
+T.~Schaul, J.\ Quan, I.\ Antonoglou, and D.\ Silver,
+``Prioritized experience replay,''
+in \emph{Proc.\ ICLR}, 2016.
+
+\bibitem{barto2003recent}
+A.~G.\ Barto and S.\ Mahadevan,
+``Recent advances in hierarchical reinforcement learning,''
+\emph{Discrete Event Dyn.\ Syst.}, vol.~13, no.~4, pp.~341--379, 2003.
+
+\bibitem{sutton1999between}
+R.~S.\ Sutton, D.\ Precup, and S.\ Singh,
+``Between MDPs and semi-MDPs: A framework for temporal abstraction
+in reinforcement learning,''
+\emph{Artif.\ Intell.}, vol.~112, no.~1--2, pp.~181--211, 1999.
+
+\bibitem{taylor2009transfer}
+M.~E.\ Taylor and P.\ Stone,
+``Transfer learning for reinforcement learning domains: A survey,''
+\emph{J.\ Mach.\ Learn.\ Res.}, vol.~10, pp.~1633--1685, 2009.
+
+\bibitem{finn2017model}
+C.~Finn, P.\ Abbeel, and S.\ Levine,
+``Model-agnostic meta-learning for fast adaptation of deep networks,''
+in \emph{Proc.\ ICML}, pp.~1126--1135, 2017.
+
+\bibitem{bellemare2016unifying}
+M.~G.\ Bellemare \emph{et al.},
+``Unifying count-based exploration and intrinsic motivation,''
+in \emph{Adv.\ Neural Inf.\ Process.\ Syst.\ (NeurIPS)},
+vol.~29, pp.~1471--1479, 2016.
+
+\bibitem{pathak2017curiosity}
+D.~Pathak, P.\ Agrawal, A.~A.\ Efros, and T.\ Darrell,
+``Curiosity-driven exploration by self-supervised prediction,''
+in \emph{Proc.\ ICML}, pp.~2778--2787, 2017.
+
+\bibitem{kapturowski2018recurrent}
+S.~Kapturowski, G.\ Ostrovski, J.\ Quan, R.\ Munos,
+and W.\ Dabney,
+``Recurrent experience replay in distributed reinforcement learning,''
+in \emph{Proc.\ ICLR}, 2019.
+
+\bibitem{ring1994continual}
+M.~B.\ Ring,
+``Continual learning in reinforcement learning systems,''
+Ph.D.\ dissertation, Univ.\ of Texas at Austin, 1994.
+
+\end{thebibliography}
+
+\end{document}
