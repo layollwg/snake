@@ -988,7 +988,7 @@ initialization, and safe action masking.
 
 Based on the optimization experiment, the most effective configuration
 is \textbf{low learning rate + slow epsilon decay}
-($\alpha{=}0.05,\gamma{=}0.9,d{=}0.999$) without extra shaping or
+($\alpha{=}0.05,d{=}0.999$, with $\gamma$ fixed at 0.9) without extra shaping or
 optimistic initialization. This setting gives the highest greedy
 evaluation average score (14.33) and ties for the best max score (30),
 so we select it as the final Q-learning-only optimized configuration.
