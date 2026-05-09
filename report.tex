@@ -15,14 +15,6 @@
 \usepackage{placeins}
 
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
-\newcommand{\safeincludegraphics}[2][]{%
-  \IfFileExists{#2}{%
-    \includegraphics[#1]{#2}%
-  }{%
-    \fbox{\parbox{0.95\columnwidth}{\centering Missing figure:\\\texttt{#2}}}%
-  }%
-}
-
 \title{Game Playing with Q-Learning:\\
 Tabular Reinforcement Learning for Simplified Snake}
 
@@ -249,35 +241,55 @@ as we explain below.
 
 \begin{figure}[tbp]
   \centering
-  \safeincludegraphics[width=\columnwidth]{results/figures/moving_avg_score.png}
+  \IfFileExists{results/figures/moving_avg_score.png}{%
+    \includegraphics[width=\columnwidth]{results/figures/moving_avg_score.png}%
+  }{%
+    \fbox{\parbox{0.95\columnwidth}{\centering Missing figure:\\\texttt{results/figures/moving\_avg\_score.png}}}%
+  }
   \caption{Moving-average score trend from \texttt{results/figures/moving\_avg\_score.png}. The curve shows stable improvement of the main Q-learning run over training.}
   \label{fig:moving_avg_score}
 \end{figure}
 
 \begin{figure}[tbp]
   \centering
-  \safeincludegraphics[width=\columnwidth]{results/figures/moving_avg_reward.png}
+  \IfFileExists{results/figures/moving_avg_reward.png}{%
+    \includegraphics[width=\columnwidth]{results/figures/moving_avg_reward.png}%
+  }{%
+    \fbox{\parbox{0.95\columnwidth}{\centering Missing figure:\\\texttt{results/figures/moving\_avg\_reward.png}}}%
+  }
   \caption{Moving-average reward trend from \texttt{results/figures/moving\_avg\_reward.png}, consistent with the score improvement pattern.}
   \label{fig:moving_avg_reward}
 \end{figure}
 
 \begin{figure}[tbp]
   \centering
-  \safeincludegraphics[width=\columnwidth]{results/figures/baseline_vs_q_learning.png}
+  \IfFileExists{results/figures/baseline_vs_q_learning.png}{%
+    \includegraphics[width=\columnwidth]{results/figures/baseline_vs_q_learning.png}%
+  }{%
+    \fbox{\parbox{0.95\columnwidth}{\centering Missing figure:\\\texttt{results/figures/baseline\_vs\_q\_learning.png}}}%
+  }
   \caption{Greedy evaluation comparison between random baseline and trained Q-learning policy from \texttt{results/figures/baseline\_vs\_q\_learning.png}.}
   \label{fig:baseline_vs_ql}
 \end{figure}
 
 \begin{figure}[tbp]
   \centering
-  \safeincludegraphics[width=\columnwidth]{results/figures/epsilon_decay_comparison.png}
+  \IfFileExists{results/figures/epsilon_decay_comparison.png}{%
+    \includegraphics[width=\columnwidth]{results/figures/epsilon_decay_comparison.png}%
+  }{%
+    \fbox{\parbox{0.95\columnwidth}{\centering Missing figure:\\\texttt{results/figures/epsilon\_decay\_comparison.png}}}%
+  }
   \caption{Effect of epsilon-decay settings from \texttt{results/figures/epsilon\_decay\_comparison.png}.}
   \label{fig:epsilon_decay_visual}
 \end{figure}
 
 \begin{figure}[tbp]
   \centering
-  \safeincludegraphics[width=\columnwidth]{results/figures/reward_shaping_comparison.png}
+  \IfFileExists{results/figures/reward_shaping_comparison.png}{%
+    \includegraphics[width=\columnwidth]{results/figures/reward_shaping_comparison.png}%
+  }{%
+    \fbox{\parbox{0.95\columnwidth}{\centering Missing figure:\\\texttt{results/figures/reward\_shaping\_comparison.png}}}%
+  }
   \caption{Reward-shaping comparison from \texttt{results/figures/reward\_shaping\_comparison.png}.}
   \label{fig:reward_shaping_visual}
 \end{figure}
