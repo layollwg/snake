@@ -19,8 +19,9 @@
 Tabular Reinforcement Learning for Simplified Snake}
 
 \author{
-  \IEEEauthorblockN{Project Team --- Track B: Game Playing with Q-Learning}
-  \IEEEauthorblockA{Reinforcement Learning Course Final Project, 2026}
+  \IEEEauthorblockN{Group 999 --- Track A: Game Playing with Q-Learning}
+  \IEEEauthorblockA{\textit{Anyi Wang, Junyi He, Yuqi Zhu, Yuqi Ren} \\
+  Reinforcement Learning Course Final Project, 2026}
 }
 
 \begin{document}
@@ -28,21 +29,7 @@ Tabular Reinforcement Learning for Simplified Snake}
 
 %% ─────────────────────────────────────────────────────────────
 \begin{abstract}
-We study tabular Q-learning for a simplified Snake game on a
-$6{\times}6$ grid.
-The state is compressed into 11 binary features that encode local
-danger, current heading, and food direction, reducing the problem to
-2{,}048 discrete states and 3 actions.
-Our main $\varepsilon$-greedy Q-learning agent, trained for
-10\,000 episodes, achieves an average greedy-evaluation score of
-\textbf{13.73} versus 0.19 for a random baseline, a 73$\times$
-improvement.
-We further compare exploration schedules, TD-control variants, and
-reward-shaping methods using only saved repository results.
-The main findings are that exploration scheduling matters more than
-algorithm choice, potential-based shaping is slightly helpful, simple
-shaping can mislead the policy, and the compact 11-bit encoding
-creates a clear long-snake performance ceiling.
+We study tabular Q-learning for a simplified Snake game on a $6{\times}6$ grid. The state space is efficiently compressed into 11 binary features encoding local danger, heading, and food direction, reducing the problem to 2,048 discrete states. Our primary $\varepsilon$-greedy Q-learning agent, trained over 10{,}000 episodes, achieves an average greedy-evaluation score of 13.73, representing a 73$\times$ improvement over the random baseline (0.19). We further evaluate the impact of exploration schedules, TD-control variants, and reward-shaping methods.  Our findings demonstrate that: (i) exploration scheduling exerts a more significant influence on performance than specific algorithm choice; (ii) potential-based shaping provides marginal benefits while simple shaping can lead to sub-optimal policies; and (iii) the compact 11-bit encoding imposes a structural performance ceiling for longer snake configurations. 
 \end{abstract}
 
 %% ─────────────────────────────────────────────────────────────
@@ -481,7 +468,7 @@ We identify this as a \textbf{structural limit} imposed by the
         leading to seemingly random deaths from the agent's perspective.
 \end{enumerate}
 
-\begin{table}[h]
+\begin{table*}[t]  % 使用 table* 并在页面顶部显示
   \centering
   \caption{Score Frequency Distribution (last 2\,000 training episodes)}
   \label{tab:scoredist}
@@ -498,7 +485,7 @@ We identify this as a \textbf{structural limit} imposed by the
     QL-simple shaping & 4.5\% & 23.4\% & 41.3\% & 25.8\% &  4.5\% & 0.4\% & 0.0\%\\
     \bottomrule
   \end{tabular}
-\end{table}
+\end{table*}
 
 \subsection{Full Ablation Study}
 \label{sec:ablation}
