@@ -933,7 +933,7 @@ using \texttt{results/grid\_size\_comparison/grid\_size\_summary.csv}.
     Grid & Avg.\ Score & Normalized Score & Max Score & Avg.\ Steps \\
     \midrule
     6{\times}6 & 13.73 & 0.404 & 27 & 69.99 \\
-    8{\times}8 & \textbf{16.88} & 0.272 & \textbf{36} & \textbf{111.03} \\
+    8{\times}8 & 16.88 & 0.272 & 36 & 111.03 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -969,13 +969,19 @@ initialization, and safe action masking.
   \end{tabular}
 \end{table}
 
+In Table~\ref{tab:q_learning_optimization}, the ``Variant (focus)''
+labels are shortened names that map to CSV variants
+\texttt{baseline}, \texttt{low\_alpha\_slow\_decay},
+\texttt{safe\_action\_mask}, \texttt{potential\_shaping}, and
+\texttt{optimistic\_slow\_decay}.
+
 \begin{table}[h]
   \centering
   \caption{Factor-specific comparisons inside Q-learning-only optimization}
   \label{tab:q_learning_factor_breakdown}
   \begin{tabular}{lcc}
     \toprule
-    Factor & Representative variants (tested) & Observation \\
+    Factor & Example variants tested & Observation \\
     \midrule
     Learning rate & $\alpha \in \{0.10,0.075,0.05,0.03\}$ & $\alpha{=}0.05$ best in this sweep \\
     Epsilon decay & $d \in \{0.995,0.9985,0.999,0.9995\}$ & $d{=}0.999$ best with tuned $\alpha$ \\
