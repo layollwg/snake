@@ -241,12 +241,37 @@ as we explain below.
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=\columnwidth]{report_assets/cumulative_env_reward_curve.png}
-  \caption{Learning curve of the main Q-learning run, plotted from
-  \texttt{results/main\_q\_learning/training\_history.csv}. The
-  cumulative environment reward rises steadily, showing sustained
-  learning over 10\,000 episodes.}
-  \label{fig:cumulative_reward}
+  \includegraphics[width=\columnwidth]{results/figures/moving_avg_score.png}
+  \caption{Moving-average score trend from \texttt{results/figures/moving\_avg\_score.png}. The curve shows stable improvement of the main Q-learning run over training.}
+  \label{fig:moving_avg_score}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{results/figures/moving_avg_reward.png}
+  \caption{Moving-average reward trend from \texttt{results/figures/moving\_avg\_reward.png}, consistent with the score improvement pattern.}
+  \label{fig:moving_avg_reward}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{results/figures/baseline_vs_q_learning.png}
+  \caption{Greedy evaluation comparison between random baseline and trained Q-learning policy from \texttt{results/figures/baseline\_vs\_q\_learning.png}.}
+  \label{fig:baseline_vs_ql}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{results/figures/epsilon_decay_comparison.png}
+  \caption{Effect of epsilon-decay settings from \texttt{results/figures/epsilon\_decay\_comparison.png}.}
+  \label{fig:epsilon_decay_visual}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{results/figures/reward_shaping_comparison.png}
+  \caption{Reward-shaping comparison from \texttt{results/figures/reward\_shaping\_comparison.png}.}
+  \label{fig:reward_shaping_visual}
 \end{figure}
 
 \subsection{Primary Result: Trained Agent vs.\ Random Baseline}
@@ -893,12 +918,80 @@ The gap between the best ($+7.7\%$) and worst ($-6.8\%$) exploration
 configurations (14.8 points combined) far exceeds the gap between
 on-policy and off-policy algorithms (0.40 points).
 
-\textbf{About learning-rate ablation.}
-The repository results include ablations for exploration schedules,
-algorithm choice, and reward shaping, but they do not include a
-dedicated sweep over $\alpha$.
-To avoid introducing unsupported claims, we therefore do not report an
-$\alpha$-ablation figure or table here.
+\subsection{6{\times}6 vs.\ 8{\times}8 Grid-Size Comparison}
+
+To verify whether the main conclusion transfers to a larger board, we
+compare Q-learning under the same core setup on 6{\times}6 and 8{\times}8
+using \texttt{results/grid\_size\_comparison/grid\_size\_summary.csv}.
+
+\begin{table}[h]
+  \centering
+  \caption{Grid-size comparison (Q-learning, 300 greedy eval episodes)}
+  \label{tab:grid_size_comparison}
+  \begin{tabular}{lcccc}
+    \toprule
+    Grid & Avg.\ Score & Avg.\ Score / Max Food & Max Score & Avg.\ Steps \\
+    \midrule
+    6{\times}6 & 13.73 & 0.404 & 27 & 69.99 \\
+    8{\times}8 & \textbf{16.88} & 0.272 & \textbf{36} & \textbf{111.03} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The trained policy outperforms random baseline on both board sizes.
+On 8{\times}8, raw score and survival steps increase because the board
+provides more free space, while capacity-normalized performance
+decreases (0.272 vs.\ 0.404), indicating that long-horizon planning
+becomes harder on larger grids.
+
+\subsection{Q-Learning-Only Optimization}
+
+We added a Q-learning-only optimization study with fixed algorithm
+(\texttt{q\_learning}) and fixed epsilon-greedy action selection.
+Only Q-learning training choices are varied and compared:
+learning rate, epsilon decay, reward shaping, optimistic
+initialization, and safe action masking.
+
+\begin{table}[h]
+  \centering
+  \caption{Q-learning-only optimization comparison (from \texttt{optimization\_summary.csv})}
+  \label{tab:q_learning_optimization}
+  \begin{tabular}{lcc}
+    \toprule
+    Variant (focus) & Avg.\ Score & Max Score \\
+    \midrule
+    Baseline & 13.73 & 27 \\
+    Low-$\alpha$ + slow decay ($\alpha{=}0.05,d{=}0.999$) & \textbf{14.33} & \textbf{30} \\
+    Safe action mask only & 13.78 & 27 \\
+    Potential shaping only & 13.78 & 26 \\
+    Optimistic init + slow decay & 13.40 & 25 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{Factor-specific comparisons inside Q-learning-only optimization}
+  \label{tab:q_learning_factor_breakdown}
+  \begin{tabular}{lcc}
+    \toprule
+    Factor & Representative variants & Observation \\
+    \midrule
+    Learning rate & $\alpha \in \{0.10,0.075,0.05,0.03\}$ & $\alpha{=}0.05$ best in this sweep \\
+    Epsilon decay & $d \in \{0.995,0.9985,0.999,0.9995\}$ & $d{=}0.999$ best with tuned $\alpha$ \\
+    Reward shaping & none vs potential (0.05/0.1) & no gain over best no-shaping setup \\
+    Optimistic init & init 0.0 vs 2.0 & optimistic init underperforms baseline \\
+    Safe action mask & off vs on & small gain alone, no gain in best tuned setup \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Based on the optimization experiment, the most effective configuration
+is \textbf{low learning rate + slow epsilon decay}
+($\alpha{=}0.05,\gamma{=}0.9,d{=}0.999$) without extra shaping or
+optimistic initialization. This setting gives the highest greedy
+evaluation average score (14.33) and ties for the best max score (30),
+so we select it as the final Q-learning-only optimized configuration.
 
 %% ─────────────────────────────────────────────────────────────
 \section{Open Research Challenges}
