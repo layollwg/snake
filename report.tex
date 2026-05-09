@@ -961,7 +961,7 @@ initialization, and safe action masking.
     Variant (focus) & Avg.\ Score & Max Score \\
     \midrule
     Baseline & 13.73 & 27 \\
-    Low-$\alpha$ + slow decay ($\alpha{=}0.05,d{=}0.999$) & \textbf{14.33} & \textbf{30} \\
+    Low-$\alpha$ + slow decay ($\alpha{=}0.05$, epsilon decay $=0.999$) & \textbf{14.33} & \textbf{30} \\
     Safe action mask only & 13.78 & 27 \\
     Potential shaping only & 13.78 & 26 \\
     Optimistic init + slow decay & 13.40 & 25 \\
@@ -984,8 +984,8 @@ labels are shortened names that map to CSV variants
     Factor & Example variants tested & Observation \\
     \midrule
     Learning rate & $\alpha \in \{0.10,0.075,0.05,0.03\}$ & $\alpha{=}0.05$ best in this sweep \\
-    Epsilon decay & $d \in \{0.995,0.9985,0.999,0.9995\}$ & $d{=}0.999$ best with tuned $\alpha$ \\
-    Reward shaping & none vs potential (0.05/0.1) & no gain over best no-shaping setup \\
+    Epsilon decay & decay $\in \{0.995,0.9985,0.999,0.9995\}$ & 0.999 best with tuned $\alpha$ \\
+    Reward shaping & none vs potential shaping weight (0.05/0.1) & no gain over best no-shaping setup \\
     Optimistic init & init 0.0 vs 2.0 & optimistic init underperforms baseline \\
     Safe action mask & off vs on & small gain alone, no gain in best tuned setup \\
     \bottomrule
@@ -994,7 +994,7 @@ labels are shortened names that map to CSV variants
 
 Based on the optimization experiment, the most effective configuration
 is \textbf{low learning rate + slow epsilon decay}
-($\alpha{=}0.05,d{=}0.999$, with $\gamma$ fixed at 0.9) without extra shaping or
+($\alpha{=}0.05$, epsilon decay $=0.999$, with $\gamma$ fixed at 0.9) without extra shaping or
 optimistic initialization. This setting gives the highest greedy
 evaluation average score (14.33) and ties for the best max score (30),
 so we select it as the final Q-learning-only optimized configuration.
