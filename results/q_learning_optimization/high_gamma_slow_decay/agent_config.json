@@ -1,0 +1,17 @@
+{
+  "num_states": 2048,
+  "num_actions": 3,
+  "alpha": 0.1,
+  "gamma": 0.95,
+  "epsilon": 1.0,
+  "min_epsilon": 0.01,
+  "epsilon_decay": 0.999,
+  "algorithm": "q_learning",
+  "exploration": "epsilon_greedy",
+  "optimistic_initial_value": 0.0,
+  "temperature": 1.0,
+  "min_temperature": 0.05,
+  "temperature_decay": 0.995,
+  "ucb_c": 1.0,
+  "seed": 42
+}

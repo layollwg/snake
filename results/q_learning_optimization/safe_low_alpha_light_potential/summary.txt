@@ -1,0 +1,35 @@
+Part 2 Enhanced Training Summary
+================================
+
+Algorithm: q_learning
+Exploration: epsilon_greedy
+Avoid immediate danger: True
+Reward shaping: potential, weight=0.05
+Grid: 6x6, episodes=10000
+
+Greedy trained policy evaluation:
+  episodes: 300
+  avg_score: 14.3
+  std_score: 4.3385865593915875
+  max_score: 26
+  avg_reward: 127.34800000000017
+  avg_steps: 70.81
+
+Random baseline evaluation:
+  episodes: 300
+  avg_score: 0.18666666666666668
+  std_score: 0.4379751388175158
+  max_score: 3
+  avg_reward: -8.887
+  avg_steps: 8.723333333333333
+
+Final Q-table / visit statistics:
+  epsilon: 0.01
+  temperature: 0.05
+  visited_states: 268
+  visited_state_action_pairs: 492
+  total_updates: 723371
+  q_mean: 0.5494870182350867
+  q_mean_abs: 0.8434875790755173
+  q_max: 22.05337318400867
+  q_min: -9.976252398342565
