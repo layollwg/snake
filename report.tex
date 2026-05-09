@@ -28,33 +28,21 @@ Tabular Reinforcement Learning for Simplified Snake}
 
 %% ─────────────────────────────────────────────────────────────
 \begin{abstract}
-We present a systematic study of tabular reinforcement learning (RL)
-applied to a simplified Snake game on a $6{\times}6$ grid.
-States are encoded as 11-bit binary feature vectors
-($|\mathcal{S}|=2{,}048$, $|\mathcal{A}|=3$), making the Q-table
-fully inspectable.
-Our primary $\varepsilon$-greedy Q-learning agent, trained for
-10\,000 episodes, achieves a greedy-evaluation average score of
-\textbf{13.73} and peak of \textbf{27}, versus 0.19 and 3 for a
-random baseline—a 73$\times$ improvement.
-We conduct ten controlled ablation experiments spanning four
-TD-control algorithms, three exploration strategies, and two
-reward-shaping schemes, cross-validated against three independent
-experimental CSV datasets (epsilon-decay comparison, reward-shaping
-comparison, basic learning curve).
-Key findings: (1) Softmax and UCB converge 2.4$\times$ faster
-than $\varepsilon$-greedy (MA score 10 at episode 303 vs 716),
-but yield comparable final performance; (2) slow $\varepsilon$-decay
-($d{=}0.999$) raises greedy-evaluation score by 7.7\% (14.79 vs 13.73)
-at the cost of 5$\times$ slower training convergence;
-(3) potential-based shaping improves both convergence speed and
-final score, while simple shaping inflates training-time rewards
-without improving—and actually reducing—the underlying greedy policy;
-(4) Double Q-learning produces highly correlated Q-tables ($r=0.983$)
-yet still reduces overestimation, as measured by the scaled mean
-maximum-action Q-value; and (5) the 11-bit encoding imposes a
-structural performance ceiling (training MA $\approx$12--13),
-with 87.9\% of Q-table entries remaining at zero.
+We study tabular Q-learning for a simplified Snake game on a
+$6{\times}6$ grid.
+The state is compressed into 11 binary features that encode local
+danger, current heading, and food direction, reducing the problem to
+2{,}048 discrete states and 3 actions.
+Our main $\varepsilon$-greedy Q-learning agent, trained for
+10\,000 episodes, achieves an average greedy-evaluation score of
+\textbf{13.73} versus 0.19 for a random baseline, a 73$\times$
+improvement.
+We further compare exploration schedules, TD-control variants, and
+reward-shaping methods using only saved repository results.
+The main findings are that exploration scheduling matters more than
+algorithm choice, potential-based shaping is slightly helpful, simple
+shaping can mislead the policy, and the compact 11-bit encoding
+creates a clear long-snake performance ceiling.
 \end{abstract}
 
 %% ─────────────────────────────────────────────────────────────
@@ -116,6 +104,10 @@ $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, R, \gamma, T)$:
 
 \subsection{State Representation}
 
+The full Snake board contains the head position, ordered body layout,
+food location, and current direction; treating that raw grid as the
+state would lead to a combinatorial explosion that is impractical for a
+small tabular method.
 The 11-dimensional binary feature vector is:
 \begin{equation}
   s = [\underbrace{d_s, d_l, d_r}_{\text{danger}},\;
@@ -150,7 +142,7 @@ The 100:1 food/step ratio ensures the dominant signal is food
 collection; the step penalty prevents looping.
 
 %% ─────────────────────────────────────────────────────────────
-\section{Key Reinforcement Learning Methods}
+\section{Key RL Methods}
 \label{sec:methods}
 
 \subsection{Q-Learning (Primary)}
@@ -162,6 +154,10 @@ Off-policy TD control~\cite{watkins1992q}:
     -Q(s,a)\bigr].
   \label{eq:ql}
 \end{equation}
+Here $\alpha$ is the learning rate, $\gamma$ is the discount factor,
+and the behaviour policy uses $\varepsilon$-greedy exploration:
+with probability $\varepsilon$ the agent chooses a random action, and
+with probability $1-\varepsilon$ it chooses the current greedy action.
 All Q-values initialise to 0; ties in $\arg\max$ are broken
 uniformly at random.
 
@@ -244,7 +240,7 @@ post-training and compared to a 300-episode uniform-random baseline.
 \end{table}
 
 %% ─────────────────────────────────────────────────────────────
-\section{Experimental Results and In-Depth Analysis}
+\section{Experimental Results and Comparisons}
 \label{sec:experiments}
 
 All reported numbers are drawn directly from experimental CSV logs
@@ -255,6 +251,16 @@ $\varepsilon>0$) and the \emph{greedy evaluation score} (300
 episodes, $\varepsilon=0$, post-training).
 These differ significantly for exploration-heavy configurations,
 as we explain below.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{results/figures/cumulative_env_reward_curve.png}
+  \caption{Learning curve of the main Q-learning run, plotted from
+  \texttt{results/main\_q\_learning/training\_history.csv}. The
+  cumulative environment reward rises steadily, showing sustained
+  learning over 10\,000 episodes.}
+  \label{fig:cumulative_reward}
+\end{figure}
 
 \subsection{Primary Result: Trained Agent vs.\ Random Baseline}
 
@@ -348,8 +354,8 @@ that collision avoidance is learned almost completely in this phase.
 \textbf{Phase~III (eps.\ 1001--3000): Convergence and fine-tuning.}
 With $\varepsilon$ locked at 0.010, the policy is 99\% greedy.
 MA score stabilises around 11.65--12.31.
-The number of visited states saturates at exactly 256 by episode
-$\approx$2\,000 and does not grow thereafter.
+For the main Q-learning run, the number of visited states saturates at
+exactly 256 by episode $\approx$2\,000 and does not grow thereafter.
 
 \textbf{Phase~IV (eps.\ 3001--10000): Plateau.}
 MA score oscillates between 12.3 and 12.6 without a sustained
@@ -451,9 +457,9 @@ We identify this as a \textbf{structural limit} imposed by the
 
 \begin{enumerate}
   \item \textbf{State saturation.}
-        Visited states plateau at exactly 256 by episode $\approx$2\,000
-        for \emph{all ten ablation variants}
-        (range: 256--259 across all experiments).
+        Visited states plateau in a very narrow range across the full
+        ablation suite: most variants end at 256 visited states, while
+        Softmax reaches 257 and slow-decay reaches 259.
         No further training discovers new states; improvement must come
         from refining already-visited Q-values,
         which yields diminishing returns after Phase~II.
@@ -580,10 +586,9 @@ committing to exploitation.
 Medium decay reaches $\varepsilon_{\min}$ at episode 900, after
 which no further Q-table diversification occurs.
 
-Quantitatively: slow decay updates 514\,951 total steps over
-10\,000 episodes vs 611\,892 for medium—17\% fewer updates
-(the agent dies more slowly as it explores more carefully).
-Yet it achieves 7.7\% higher greedy score, suggesting that
+Quantitatively: slow decay records 514\,951 state visits over
+10\,000 episodes vs 611\,892 for the medium schedule, yet it still
+achieves a 7.7\% higher greedy score, suggesting that
 \emph{update quality matters more than update quantity} in this
 tabular setting.
 
@@ -701,11 +706,12 @@ For single Q-learning: $\frac{1}{256}\sum_s\max_a Q(s,a)=1.143$.
 For Double Q-learning (scaled by $\tfrac{1}{2}$ to match single
 table scale): $\frac{1}{256}\sum_s\max_a\frac{Q_1+Q_2}{2}(s,a)=1.176$.
 The Double Q scaled mean-max is slightly \emph{higher} than single Q,
-suggesting that in this setting the tables have nearly
-converged to the same $Q^*$ and the decorrelation benefit is modest.
-The positive performance gap (13.98 vs 13.73) is therefore more
-likely attributable to the additional update diversity from maintaining
-two tables.
+so this metric alone does not provide strong empirical evidence of a
+large overestimation reduction in this repository.
+Instead, the main defensible empirical conclusion is narrower:
+Double Q-learning attains a slightly higher greedy score
+(13.98 vs 13.73) while keeping lower late-stage TD error
+(Table~\ref{tab:tderr}).
 
 \textbf{Scale artefact.}
 The effective Q-table ($Q_1+Q_2$) shows $|Q|_{\text{mean}}=1.638$
@@ -824,9 +830,8 @@ the agent has learned a policy biased toward moving toward food
 \emph{even when detours are necessary to avoid body traps},
 resulting in worse actual survival.
 
-This is a direct, data-confirmed instance of \emph{reward hacking}
-in the Goodhart sense~\cite{ng1999policy}: the agent optimises
-the shaped proxy rather than the true objective.
+This is a direct proxy-mismatch effect: the agent improves the
+shaped training objective without improving the final greedy policy.
 
 \textbf{Potential-based shaping escapes this problem.}
 Potential shaping adds a mean bonus of $+1.97$ per episode
@@ -901,15 +906,22 @@ The gap between the best ($+7.7\%$) and worst ($-6.8\%$) exploration
 configurations (14.8 points combined) far exceeds the gap between
 on-policy and off-policy algorithms (0.40 points).
 
+\textbf{About learning-rate ablation.}
+The repository results include ablations for exploration schedules,
+algorithm choice, and reward shaping, but they do not include a
+dedicated sweep over $\alpha$.
+To avoid introducing unsupported claims, we therefore do not report an
+$\alpha$-ablation figure or table here.
+
 %% ─────────────────────────────────────────────────────────────
 \section{Open Research Challenges}
 \label{sec:challenges}
 
 \subsection{Breaking the Tabular Ceiling via Richer Encodings}
 
-Our experiments establish that all ten variants saturate at 256
-reachable states and a greedy score of $\approx$13--15,
-limited by the one-step danger horizon.
+Our experiments establish that all variants saturate in a very narrow
+reachable-state range (256--259 states) and in a greedy-score range of
+$\approx$13--15, limited by the one-step danger horizon.
 Incrementally, two-step look-ahead bits ($d_{ss}$, etc.) could
 extend the table to $2^{14}=16{,}384$ entries and may push the
 ceiling to score 20--25.
@@ -943,9 +955,9 @@ reachability---would provide a more accurate signal for
 long-snake configurations.
 The challenge is computing such a potential at each step without
 excessive overhead.
-Alternatively, \emph{inverse reward shaping}~\cite{ng1999policy}
-could learn the potential function from expert demonstrations,
-but this requires labelled data.
+Alternatively, the potential function could be learned from expert
+demonstrations or planning heuristics, but this would require extra
+supervision not present in the current repository.
 
 \subsection{Partial Observability and Memory}
 
@@ -1021,9 +1033,10 @@ yielding a small but consistent $+0.5\%$ improvement with lower
 score variance.
 
 \textbf{Structural ceiling.}
-All ten variants saturate at exactly 256 reachable states by
-episode 2\,000, and the training MA score never exceeds 13 due
-to the one-step danger horizon of the 11-bit encoding.
+By the end of training, all variants saturate in a narrow range of
+256--259 reachable states, and the training MA score never exceeds 13
+for the main run due to the one-step danger horizon of the 11-bit
+encoding.
 Overcoming this ceiling requires either richer state representations
 or deep function approximation, motivating the extension to DQN
 and POMDP-aware architectures for future work.
