@@ -950,7 +950,8 @@ We added a Q-learning-only optimization study with fixed algorithm
 (\texttt{q\_learning}) and fixed epsilon-greedy action selection.
 Only Q-learning training choices are varied and compared:
 learning rate, epsilon decay, reward shaping, optimistic
-initialization, and safe action masking.
+initialization, and safe action masking. The discount factor
+$\gamma$ is held constant at 0.9 to isolate these optimization factors.
 
 \begin{table}[h]
   \centering
@@ -961,7 +962,7 @@ initialization, and safe action masking.
     Variant (focus) & Avg.\ Score & Max Score \\
     \midrule
     Baseline & 13.73 & 27 \\
-    Low-$\alpha$ + slow decay ($\alpha{=}0.05$, epsilon decay $=0.999$) & \textbf{14.33} & \textbf{30} \\
+    \texttt{low\_alpha\_slow\_decay} (low-$\alpha$ + slow decay) & \textbf{14.33} & \textbf{30} \\
     Safe action mask only & 13.78 & 27 \\
     Potential shaping only & 13.78 & 26 \\
     Optimistic init + slow decay & 13.40 & 25 \\
